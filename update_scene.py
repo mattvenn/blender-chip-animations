@@ -13,6 +13,12 @@ import math
 import os
 from mathutils import Vector
 
+
+def bbox_z_extent(obj):
+    """Return (z_min, z_max) of obj in local space (after scale applied)."""
+    zs = [Vector(c).z for c in obj.bound_box]
+    return min(zs), max(zs)
+
 CONFIG_PATH = "/Users/mattvenn/blender/layer_config.json"
 
 # ─────────────────────────────────────────────
@@ -170,18 +176,20 @@ def main():
     layers    = cfg['layers']
     anim_cfg  = cfg['animation']
     light_cfg = cfg.get('lighting', {})
-    z_spacing = cfg['layer_z_spacing']
 
     # ── Materials & Z positions ───────────────────────────────
     missing = []
-    for i, lc in enumerate(layers):
+    current_z = 0.0
+    for lc in layers:
         obj = bpy.data.objects.get(lc['name'])
         if obj is None:
             missing.append(lc['name'])
             continue
 
-        # Z position
-        obj.location.z = i * z_spacing
+        # Stack flush on top of previous layer
+        z_min, z_max = bbox_z_extent(obj)
+        obj.location.z = current_z - z_min
+        current_z += (z_max - z_min)
 
         # Material
         mat = make_material(lc)
@@ -191,10 +199,10 @@ def main():
             obj.data.materials.append(mat)
 
     if missing:
-        print(f"WARNING: objects not found (run import_layers.py first): {missing}")
+        print(f"WARNING: objects not found (run build_scene.py first): {missing}")
 
     # ── Camera & lighting ─────────────────────────────────────
-    chip_center_z = ((len(layers) - 1) * z_spacing) / 2
+    chip_center_z = current_z / 2
 
     focus_empty = bpy.data.objects.get("FocusPoint")
     if focus_empty:
@@ -236,7 +244,7 @@ def main():
         if i == 0:
             # Substrate is already in place — pin it at final Z for all frames
             obj.animation_data_clear()
-            obj.location.z = 0.0
+            final_z = obj.location.z
             with kf_interp('CONSTANT'):
                 obj.keyframe_insert(data_path="location", index=2, frame=1)
                 obj.keyframe_insert(data_path="location", index=2, frame=total_frames)

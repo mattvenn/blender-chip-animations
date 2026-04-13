@@ -1,8 +1,8 @@
 """
 save_camera.py
-Run this ONCE after positioning your camera in Blender.
-It writes the camera's exact location and rotation into layer_config.json
-so that update_scene.py will restore it exactly on every run.
+Run after positioning your camera and/or tweaking lights in Blender.
+Saves camera transform, focal length, and light energies to layer_config.json
+so that update_scene.py restores them exactly on every run.
 """
 
 import bpy
@@ -10,23 +10,46 @@ import json
 
 CONFIG_PATH = "/Users/mattvenn/blender/layer_config.json"
 
+with open(CONFIG_PATH) as f:
+    cfg = json.load(f)
+
+# ── Camera ────────────────────────────────────────────────────────────────────
 cam = bpy.context.scene.camera
 if cam is None:
     print("ERROR: No active camera in scene.")
 else:
-    loc = list(cam.location)
-    rot = list(cam.rotation_euler)
+    cfg['camera']['location']       = [round(v, 6) for v in cam.location]
+    cfg['camera']['rotation_euler'] = [round(v, 6) for v in cam.rotation_euler]
+    cfg['camera']['focal_length']   = round(cam.data.lens, 2)
+    print(f"Camera saved:  location={cfg['camera']['location']}  rotation={cfg['camera']['rotation_euler']}  focal_length={cfg['camera']['focal_length']}")
 
-    with open(CONFIG_PATH) as f:
-        cfg = json.load(f)
+# ── Lights ────────────────────────────────────────────────────────────────────
+light_map = {
+    'KeyLight':  'key_energy',
+    'FillLight': 'fill_energy',
+    'RimLight':  'rim_energy',
+}
 
-    cfg['camera']['location']       = [round(v, 6) for v in loc]
-    cfg['camera']['rotation_euler'] = [round(v, 6) for v in rot]
+if 'lighting' not in cfg:
+    cfg['lighting'] = {}
 
-    with open(CONFIG_PATH, 'w') as f:
-        json.dump(cfg, f, indent=2)
+for obj_name, cfg_key in light_map.items():
+    obj = bpy.data.objects.get(obj_name)
+    if obj and obj.type == 'LIGHT':
+        cfg['lighting'][cfg_key] = round(obj.data.energy, 2)
+        print(f"Light saved:   {obj_name} energy={cfg['lighting'][cfg_key]}")
+    else:
+        print(f"WARNING: light '{obj_name}' not found in scene — skipped.")
 
-    print(f"Camera saved to config:")
-    print(f"  location:       {cfg['camera']['location']}")
-    print(f"  rotation_euler: {cfg['camera']['rotation_euler']}")
-    print("update_scene.py will now use this exact camera position.")
+# ── World strength ────────────────────────────────────────────────────────────
+world = bpy.context.scene.world
+if world and world.use_nodes:
+    bg = world.node_tree.nodes.get('Background')
+    if bg:
+        cfg['lighting']['world_strength'] = round(bg.inputs['Strength'].default_value, 4)
+        print(f"World saved:   strength={cfg['lighting']['world_strength']}")
+
+with open(CONFIG_PATH, 'w') as f:
+    json.dump(cfg, f, indent=2)
+
+print("Done — layer_config.json updated.")

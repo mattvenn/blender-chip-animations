@@ -66,6 +66,12 @@ def bbox_center_xy(obj):
     return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
 
 
+def bbox_z_extent(obj):
+    """Return (z_min, z_max) of obj in local space (after scale applied)."""
+    zs = [Vector(c).z for c in obj.bound_box]
+    return min(zs), max(zs)
+
+
 # ─────────────────────────────────────────────
 # Materials
 # ─────────────────────────────────────────────
@@ -272,14 +278,15 @@ def main():
     cam_cfg   = cfg['camera']
     light_cfg = cfg.get('lighting', {})
     folder    = cfg['stl_folder']
-    scale     = cfg['scale']
-    z_spacing = cfg['layer_z_spacing']
+    scale            = cfg['scale']
+    layer_thickness  = cfg['layer_thickness']
 
     print("\n=== Building chip scene ===")
     clear_scene()
 
     # ── 1. Import & position layers ──────────────────────────
     layer_objects = []
+    current_z = 0.0
     for i, lc in enumerate(layers):
         filepath = os.path.join(folder, lc['filename'])
         if not os.path.exists(filepath):
@@ -294,9 +301,12 @@ def main():
             continue
 
         obj.name  = lc['name']
-        obj.scale = (scale, scale, scale)
+        obj.scale = (scale, scale, scale * layer_thickness)
         apply_scale(obj)
-        obj.location.z = i * z_spacing
+
+        z_min, z_max = bbox_z_extent(obj)
+        obj.location.z = current_z - z_min
+        current_z += (z_max - z_min)
 
         mat = make_material(lc)
         if obj.data.materials:
@@ -305,7 +315,7 @@ def main():
             obj.data.materials.append(mat)
 
         layer_objects.append(obj)
-        print(f"    → placed at Z = {obj.location.z:.3f}")
+        print(f"    → placed at Z = {obj.location.z:.3f}, height = {z_max - z_min:.4f}")
 
     valid_objects = [o for o in layer_objects if o is not None]
     if not valid_objects:
@@ -328,7 +338,7 @@ def main():
         obj.matrix_parent_inverse = rot_empty.matrix_world.inverted()
 
     # ── 4. Focus Empty at chip vertical centre ───────────────
-    chip_center_z = ((len(layers) - 1) * z_spacing) / 2
+    chip_center_z = current_z / 2
     bpy.ops.object.empty_add(type='SPHERE', location=(0, 0, chip_center_z), scale=(0.1, 0.1, 0.1))
     focus_empty = bpy.context.active_object
     focus_empty.name = "FocusPoint"
@@ -345,7 +355,7 @@ def main():
     set_linear_rotation(rot_empty, 1, anim_cfg['total_frames'], anim_cfg['rotation_degrees'])
 
     # ── 8. Layer drop animations ──────────────────────────────
-    n = len(layers)
+    n            = len(layers)
     first_drop   = anim_cfg['first_drop_frame']
     last_drop    = anim_cfg['last_drop_start_frame']
     duration     = anim_cfg['drop_duration_frames']
