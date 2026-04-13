@@ -146,9 +146,9 @@ def setup_lighting(chip_center_z):
         obj.location       = loc
         obj.rotation_euler = tuple(math.radians(a) for a in rot_deg)
 
-    add_area("KeyLight", 6000, 4,
+    add_area("KeyLight", 20000, 4,
              (9, -7, chip_center_z + 10), (50, 0, 40))
-    add_area("FillLight", 2000, 9,
+    add_area("FillLight", 8000, 9,
              (-11, 9, chip_center_z + 7), (35, 0, -50))
 
     rim_d   = bpy.data.lights.new("RimLight", type='SPOT')
@@ -245,6 +245,12 @@ def main():
         drop_start = int(first_drop + t * (last_drop - first_drop))
         animate_drop(obj, obj.location.z, drop_start, duration,
                      drop_height, overshoot, total_frames)
+
+    # Sync frame range and fps from config
+    scene = bpy.context.scene
+    scene.frame_start = 1
+    scene.frame_end   = anim_cfg['total_frames']
+    scene.render.fps  = anim_cfg['fps']
 
     bpy.context.scene.frame_set(1)
     print("update_scene.py done — materials, camera, lighting, and animation updated.")

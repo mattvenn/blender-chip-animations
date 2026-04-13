@@ -16,17 +16,17 @@
     "distance": 14,
     "elevation_degrees": 42,
     "azimuth_degrees": 225,
-    "focal_length": 85,
+    "focal_length": 24,
     "dof_fstop": 3.5,
     "location": [
-      -4.785171,
-      -1.994873,
-      3.847987
+      0.693964,
+      0.746664,
+      0.890546
     ],
     "rotation_euler": [
-      0.914552,
+      0.712094,
       0.0,
-      -1.183333
+      -3.906047
     ]
   },
   "layers": [
