@@ -1,0 +1,214 @@
+{
+  "stl_folder": "/Users/mattvenn/blender/sar",
+  "scale": 0.01,
+  "layer_z_spacing": 0.01,
+  "animation": {
+    "total_frames": 240,
+    "fps": 24,
+    "rotation_degrees": 360,
+    "first_drop_frame": 15,
+    "last_drop_start_frame": 195,
+    "drop_duration_frames": 22,
+    "drop_height": 1,
+    "overshoot": 0.0
+  },
+  "camera": {
+    "distance": 14,
+    "elevation_degrees": 42,
+    "azimuth_degrees": 225,
+    "focal_length": 85,
+    "dof_fstop": 3.5,
+    "location": [
+      -4.785171,
+      -1.994873,
+      3.847987
+    ],
+    "rotation_euler": [
+      0.914552,
+      0.0,
+      -1.183333
+    ]
+  },
+  "layers": [
+    {
+      "name": "substrate",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_substrate.stl",
+      "color": [
+        0.05,
+        0.05,
+        0.06
+      ],
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "transmission": 0.0
+    },
+    {
+      "name": "nwell",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_nwell.stl",
+      "color": [
+        0.12,
+        0.06,
+        0.18
+      ],
+      "metallic": 0.0,
+      "roughness": 0.75,
+      "transmission": 0.0
+    },
+    {
+      "name": "tap",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_tap.stl",
+      "color": [
+        0.06,
+        0.18,
+        0.1
+      ],
+      "metallic": 0.0,
+      "roughness": 0.75,
+      "transmission": 0.0
+    },
+    {
+      "name": "diff",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_diff.stl",
+      "color": [
+        0.4,
+        0.15,
+        0.03
+      ],
+      "metallic": 0.0,
+      "roughness": 0.7,
+      "transmission": 0.0
+    },
+    {
+      "name": "poly",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_poly.stl",
+      "color": [
+        0.35,
+        0.03,
+        0.03
+      ],
+      "metallic": 0.1,
+      "roughness": 0.6,
+      "transmission": 0.0
+    },
+    {
+      "name": "licon",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_licon.stl",
+      "color": [
+        0.07,
+        0.07,
+        0.07
+      ],
+      "metallic": 0.9,
+      "roughness": 0.35,
+      "transmission": 0.0
+    },
+    {
+      "name": "li1",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_li1.stl",
+      "color": [
+        0.45,
+        0.28,
+        0.06
+      ],
+      "metallic": 0.8,
+      "roughness": 0.3,
+      "transmission": 0.0
+    },
+    {
+      "name": "mcon",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_mcon.stl",
+      "color": [
+        0.06,
+        0.06,
+        0.06
+      ],
+      "metallic": 0.95,
+      "roughness": 0.3,
+      "transmission": 0.0
+    },
+    {
+      "name": "met1",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_met1.stl",
+      "color": [
+        0.55,
+        0.28,
+        0.06
+      ],
+      "metallic": 0.95,
+      "roughness": 0.18,
+      "transmission": 0.0
+    },
+    {
+      "name": "via",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_via.stl",
+      "color": [
+        0.05,
+        0.05,
+        0.05
+      ],
+      "metallic": 0.95,
+      "roughness": 0.28,
+      "transmission": 0.0
+    },
+    {
+      "name": "met2",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_met2.stl",
+      "color": [
+        0.6,
+        0.32,
+        0.08
+      ],
+      "metallic": 0.95,
+      "roughness": 0.16,
+      "transmission": 0.0
+    },
+    {
+      "name": "via2",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_via2.stl",
+      "color": [
+        0.05,
+        0.05,
+        0.05
+      ],
+      "metallic": 0.95,
+      "roughness": 0.28,
+      "transmission": 0.0
+    },
+    {
+      "name": "met3",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_met3.stl",
+      "color": [
+        0.45,
+        0.45,
+        0.58
+      ],
+      "metallic": 0.95,
+      "roughness": 0.14,
+      "transmission": 0.0
+    },
+    {
+      "name": "via3",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_via3.stl",
+      "color": [
+        0.05,
+        0.05,
+        0.05
+      ],
+      "metallic": 0.95,
+      "roughness": 0.28,
+      "transmission": 0.0
+    },
+    {
+      "name": "met4",
+      "filename": "tt_um_TT06_SAR_wulffern.gds_met4.stl",
+      "color": [
+        0.65,
+        0.68,
+        0.72
+      ],
+      "metallic": 0.98,
+      "roughness": 0.08,
+      "transmission": 0.0
+    }
+  ]
+}
