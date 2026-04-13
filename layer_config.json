@@ -12,8 +12,9 @@
     "drop_height": 2,
     "overshoot": 0.0
   },
+  "motion_blur": false,
   "lighting": {
-    "world_strength": 1.5,
+    "world_strength": 0.0,
     "key_energy": 20000,
     "fill_energy": 8000,
     "rim_energy": 4000
@@ -23,7 +24,7 @@
     "elevation_degrees": 42,
     "azimuth_degrees": 225,
     "focal_length": 85,
-    "dof_fstop": 3.5,
+    "dof_fstop": 8,
     "location": [
       -4.785171,
       -1.994873,

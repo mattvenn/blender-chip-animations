@@ -247,11 +247,12 @@ def main():
         animate_drop(obj, obj.location.z, drop_start, duration,
                      drop_height, overshoot, total_frames)
 
-    # Sync frame range and fps from config
+    # Sync frame range, fps, and motion blur from config
     scene = bpy.context.scene
     scene.frame_start = 1
     scene.frame_end   = anim_cfg['total_frames']
     scene.render.fps  = anim_cfg['fps']
+    scene.render.use_motion_blur = cfg.get('motion_blur', False)
 
     bpy.context.scene.frame_set(1)
     print("update_scene.py done — materials, camera, lighting, and animation updated.")

@@ -223,7 +223,7 @@ def animate_drop(obj, final_z, drop_start, drop_duration, drop_height, overshoot
 # Render settings
 # ─────────────────────────────────────────────
 
-def setup_render(scene, anim_cfg):
+def setup_render(scene, anim_cfg, motion_blur):
     scene.frame_start = 1
     scene.frame_end   = anim_cfg['total_frames']
     scene.render.fps  = anim_cfg['fps']
@@ -253,7 +253,7 @@ def setup_render(scene, anim_cfg):
                 setattr(eevee, attr, val)
 
     # Motion blur
-    scene.render.use_motion_blur = True
+    scene.render.use_motion_blur = motion_blur
     scene.render.motion_blur_shutter = 0.3
 
     # Output: PNG sequence (safer for long renders)
@@ -341,10 +341,10 @@ def main():
     print(f"\nCamera at {tuple(round(v,2) for v in cam_obj.location)}")
     print(f"Chip centre Z = {chip_center_z:.3f}")
 
-    # ── 6. Rotation animation ─────────────────────────────────
+    # ── 7. Rotation animation ─────────────────────────────────
     set_linear_rotation(rot_empty, 1, anim_cfg['total_frames'], anim_cfg['rotation_degrees'])
 
-    # ── 7. Layer drop animations ──────────────────────────────
+    # ── 8. Layer drop animations ──────────────────────────────
     n = len(layers)
     first_drop   = anim_cfg['first_drop_frame']
     last_drop    = anim_cfg['last_drop_start_frame']
@@ -375,13 +375,13 @@ def main():
                      drop_height, overshoot, total_frames)
         print(f"  {lc['name']:12s} drops at frame {drop_start:3d}, settles at Z={final_z:.3f}")
 
-    # ── 8. Render settings ────────────────────────────────────
-    setup_render(bpy.context.scene, anim_cfg)
+    # ── 9. Render settings ────────────────────────────────────
+    setup_render(bpy.context.scene, anim_cfg, cfg.get('motion_blur', False))
 
     # Park timeline at frame 1 so Viewport shows layers ascending
     bpy.context.scene.frame_set(1)
 
-    # ── 9. Save a checkpoint .blend ──────────────────────────
+    # ── 10. Save a checkpoint .blend ─────────────────────────
     blend_path = os.path.join(os.path.dirname(CONFIG_PATH), "chip_scene.blend")
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
     print(f"\nSaved: {blend_path}")
