@@ -3,12 +3,12 @@
   "scale": 0.01,
   "layer_z_spacing": 0.01,
   "animation": {
-    "total_frames": 240,
+    "total_frames": 150,
     "fps": 24,
     "rotation_degrees": 360,
     "first_drop_frame": 15,
-    "last_drop_start_frame": 195,
-    "drop_duration_frames": 22,
+    "last_drop_start_frame": 105,
+    "drop_duration_frames": 12,
     "drop_height": 1,
     "overshoot": 0.0
   },
@@ -110,8 +110,8 @@
         0.28,
         0.06
       ],
-      "metallic": 0.8,
-      "roughness": 0.3,
+      "metallic": 1.0,
+      "roughness": 0.08,
       "transmission": 0.0
     },
     {
@@ -134,8 +134,8 @@
         0.28,
         0.06
       ],
-      "metallic": 0.95,
-      "roughness": 0.18,
+      "metallic": 1.0,
+      "roughness": 0.08,
       "transmission": 0.0
     },
     {
@@ -158,8 +158,8 @@
         0.32,
         0.08
       ],
-      "metallic": 0.95,
-      "roughness": 0.16,
+      "metallic": 1.0,
+      "roughness": 0.08,
       "transmission": 0.0
     },
     {
@@ -182,8 +182,8 @@
         0.45,
         0.58
       ],
-      "metallic": 0.95,
-      "roughness": 0.14,
+      "metallic": 1.0,
+      "roughness": 0.08,
       "transmission": 0.0
     },
     {
@@ -206,8 +206,8 @@
         0.68,
         0.72
       ],
-      "metallic": 0.98,
-      "roughness": 0.08,
+      "metallic": 1.0,
+      "roughness": 0.05,
       "transmission": 0.0
     }
   ]

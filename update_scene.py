@@ -115,10 +115,14 @@ def setup_camera(cfg, focus_obj):
         direction = focus_obj.location - cam_obj.location
         cam_obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-    cam_data.lens               = cfg['focal_length']
-    cam_data.dof.use_dof        = True
-    cam_data.dof.focus_object   = focus_obj
-    cam_data.dof.aperture_fstop = cfg['dof_fstop']
+    cam_data.lens     = cfg['focal_length']
+    fstop = cfg.get('dof_fstop', 0)
+    if fstop > 0:
+        cam_data.dof.use_dof        = True
+        cam_data.dof.focus_object   = focus_obj
+        cam_data.dof.aperture_fstop = fstop
+    else:
+        cam_data.dof.use_dof = False
     return cam_obj
 
 
@@ -227,6 +231,16 @@ def main():
         obj = bpy.data.objects.get(lc['name'])
         if obj is None:
             continue
+
+        if i == 0:
+            # Substrate is already in place — pin it at final Z for all frames
+            obj.animation_data_clear()
+            obj.location.z = 0.0
+            with kf_interp('CONSTANT'):
+                obj.keyframe_insert(data_path="location", index=2, frame=1)
+                obj.keyframe_insert(data_path="location", index=2, frame=total_frames)
+            continue
+
         t = i / max(n - 1, 1)
         drop_start = int(first_drop + t * (last_drop - first_drop))
         animate_drop(obj, obj.location.z, drop_start, duration,
