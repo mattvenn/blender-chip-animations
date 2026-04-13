@@ -130,8 +130,7 @@ def setup_camera(cfg, focus_obj):
 # Lighting
 # ─────────────────────────────────────────────
 
-def setup_lighting(chip_center_z):
-    # Dark environment with a slight cool tint
+def setup_lighting(chip_center_z, light_cfg):
     world = bpy.context.scene.world
     if world is None:
         world = bpy.data.worlds.new("World")
@@ -139,8 +138,8 @@ def setup_lighting(chip_center_z):
     world.use_nodes = True
     bg = world.node_tree.nodes.get('Background')
     if bg:
-        bg.inputs['Color'].default_value    = (0.02, 0.02, 0.04, 1.0)
-        bg.inputs['Strength'].default_value = 0.4
+        bg.inputs['Color'].default_value    = (0.05, 0.06, 0.10, 1.0)
+        bg.inputs['Strength'].default_value = light_cfg.get('world_strength', 1.5)
 
     def add_area(name, energy, size, loc, rot_deg):
         d   = bpy.data.lights.new(name, type='AREA')
@@ -152,22 +151,16 @@ def setup_lighting(chip_center_z):
         obj.rotation_euler = tuple(math.radians(a) for a in rot_deg)
         return obj
 
-    # Key – warm, upper front-right
-    add_area("KeyLight",  600, 4,
-             (9, -7, chip_center_z + 10),
-             (50, 0, 40))
+    add_area("KeyLight",  light_cfg.get('key_energy',  20000), 4,
+             (9, -7, chip_center_z + 10), (50, 0, 40))
+    add_area("FillLight", light_cfg.get('fill_energy',  8000), 9,
+             (-11, 9, chip_center_z + 7), (35, 0, -50))
 
-    # Fill – cool, softer, opposite side
-    add_area("FillLight", 180, 9,
-             (-11, 9, chip_center_z + 7),
-             (35, 0, -50))
-
-    # Rim – tight spot from below-back for edge glints on metal
     rim_d   = bpy.data.lights.new("RimLight", type='SPOT')
     rim_obj = bpy.data.objects.new("RimLight", rim_d)
     bpy.context.scene.collection.objects.link(rim_obj)
-    rim_d.energy    = 300
-    rim_d.spot_size = math.radians(25)
+    rim_d.energy     = light_cfg.get('rim_energy', 4000)
+    rim_d.spot_size  = math.radians(25)
     rim_d.spot_blend = 0.3
     rim_obj.location       = (-6, -9, chip_center_z - 3)
     rim_obj.rotation_euler = (math.radians(-55), 0, math.radians(-40))
@@ -277,6 +270,7 @@ def main():
     layers    = cfg['layers']
     anim_cfg  = cfg['animation']
     cam_cfg   = cfg['camera']
+    light_cfg = cfg.get('lighting', {})
     folder    = cfg['stl_folder']
     scale     = cfg['scale']
     z_spacing = cfg['layer_z_spacing']
@@ -343,7 +337,7 @@ def main():
 
     # ── 5. Camera & lighting ──────────────────────────────────
     cam_obj = setup_camera(cam_cfg, focus_empty)
-    setup_lighting(chip_center_z)
+    setup_lighting(chip_center_z, light_cfg)
     print(f"\nCamera at {tuple(round(v,2) for v in cam_obj.location)}")
     print(f"Chip centre Z = {chip_center_z:.3f}")
 
@@ -362,6 +356,17 @@ def main():
     for i, (lc, obj) in enumerate(zip(layers, layer_objects)):
         if obj is None:
             continue
+
+        if i == 0:
+            # Substrate is already in place — pin it at final Z for all frames
+            final_z = obj.location.z
+            with _kf_interp('CONSTANT'):
+                obj.location.z = final_z
+                obj.keyframe_insert(data_path="location", index=2, frame=1)
+                obj.keyframe_insert(data_path="location", index=2, frame=total_frames)
+            print(f"  {lc['name']:12s} pinned at Z={final_z:.3f} (no drop)")
+            continue
+
         t = i / max(n - 1, 1)
         drop_start = int(first_drop + t * (last_drop - first_drop))
         final_z    = obj.location.z   # local Z relative to parent

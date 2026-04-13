@@ -9,24 +9,30 @@
     "first_drop_frame": 15,
     "last_drop_start_frame": 105,
     "drop_duration_frames": 12,
-    "drop_height": 1,
+    "drop_height": 2,
     "overshoot": 0.0
+  },
+  "lighting": {
+    "world_strength": 1.5,
+    "key_energy": 20000,
+    "fill_energy": 8000,
+    "rim_energy": 4000
   },
   "camera": {
     "distance": 14,
     "elevation_degrees": 42,
     "azimuth_degrees": 225,
-    "focal_length": 24,
+    "focal_length": 85,
     "dof_fstop": 3.5,
     "location": [
-      0.693964,
-      0.746664,
-      0.890546
+      -4.785171,
+      -1.994873,
+      3.847987
     ],
     "rotation_euler": [
-      0.712094,
+      0.914552,
       0.0,
-      -3.906047
+      -1.183333
     ]
   },
   "layers": [

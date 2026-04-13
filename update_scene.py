@@ -126,7 +126,7 @@ def setup_camera(cfg, focus_obj):
     return cam_obj
 
 
-def setup_lighting(chip_center_z):
+def setup_lighting(chip_center_z, light_cfg):
     world = bpy.context.scene.world
     if world is None:
         world = bpy.data.worlds.new("World")
@@ -135,7 +135,7 @@ def setup_lighting(chip_center_z):
     bg = world.node_tree.nodes.get('Background')
     if bg:
         bg.inputs['Color'].default_value    = (0.05, 0.06, 0.10, 1.0)
-        bg.inputs['Strength'].default_value = 1.5
+        bg.inputs['Strength'].default_value = light_cfg.get('world_strength', 1.5)
 
     def add_area(name, energy, size, loc, rot_deg):
         d   = bpy.data.lights.new(name, type='AREA')
@@ -146,15 +146,15 @@ def setup_lighting(chip_center_z):
         obj.location       = loc
         obj.rotation_euler = tuple(math.radians(a) for a in rot_deg)
 
-    add_area("KeyLight", 20000, 4,
+    add_area("KeyLight",  light_cfg.get('key_energy',  20000), 4,
              (9, -7, chip_center_z + 10), (50, 0, 40))
-    add_area("FillLight", 8000, 9,
+    add_area("FillLight", light_cfg.get('fill_energy',  8000), 9,
              (-11, 9, chip_center_z + 7), (35, 0, -50))
 
     rim_d   = bpy.data.lights.new("RimLight", type='SPOT')
     rim_obj = bpy.data.objects.new("RimLight", rim_d)
     bpy.context.scene.collection.objects.link(rim_obj)
-    rim_d.energy         = 4000
+    rim_d.energy         = light_cfg.get('rim_energy', 4000)
     rim_d.spot_size      = math.radians(25)
     rim_d.spot_blend     = 0.3
     rim_obj.location     = (-6, -9, chip_center_z - 3)
@@ -169,6 +169,7 @@ def main():
     cfg       = load_config(CONFIG_PATH)
     layers    = cfg['layers']
     anim_cfg  = cfg['animation']
+    light_cfg = cfg.get('lighting', {})
     z_spacing = cfg['layer_z_spacing']
 
     # ── Materials & Z positions ───────────────────────────────
@@ -208,7 +209,7 @@ def main():
 
     clear_lights_and_camera()
     setup_camera(cfg['camera'], focus_empty)
-    setup_lighting(chip_center_z)
+    setup_lighting(chip_center_z, light_cfg)
 
     # ── Animation ─────────────────────────────────────────────
     rot_empty = bpy.data.objects.get("ChipRotation")
