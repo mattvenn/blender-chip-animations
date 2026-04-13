@@ -3,15 +3,18 @@
   "scale": 0.01,
   "layer_thickness": 10,
   "animation": {
-    "total_frames": 150,
+    "total_frames": 200,
     "fps": 24,
     "rotation_degrees": 360,
-    "first_drop_frame": 15,
-    "last_drop_start_frame": 105,
-    "drop_duration_frames": 12,
-    "drop_height": 1,
-    "overshoot": 0.0
+    "fly_off_first_frame": 20,
+    "stagger_frames": 2,
+    "duration_frames": 6,
+    "gap_frames": 30,
+    "drop_height": 1.3,
+    "overshoot": 0.0,
+    "easing_type": "CUBIC"
   },
+  "render_engine": "CYCLES",
   "motion_blur": true,
   "lighting": {
     "world_strength": 0.0,
@@ -24,7 +27,7 @@
     "elevation_degrees": 42,
     "azimuth_degrees": 225,
     "focal_length": 141.0,
-    "dof_fstop": 4,
+    "dof_fstop": 2,
     "location": [
       -4.785171,
       -1.994873,
@@ -40,6 +43,7 @@
     {
       "name": "substrate",
       "filename": "tt_um_TT06_SAR_wulffern.gds_substrate.stl",
+      "hidden": true,
       "color": [
         0.08,
         0.08,
@@ -161,9 +165,9 @@
       "name": "met2",
       "filename": "tt_um_TT06_SAR_wulffern.gds_met2.stl",
       "color": [
-        0.05,
-        0.15,
-        0.9
+        0.016,
+        0.012,
+        0.443
       ],
       "metallic": 0.0,
       "roughness": 0.8,
@@ -185,9 +189,9 @@
       "name": "met3",
       "filename": "tt_um_TT06_SAR_wulffern.gds_met3.stl",
       "color": [
-        0.69,
-        0.73,
-        0.86
+        0.988,
+        0.624,
+        0.624
       ],
       "metallic": 0.0,
       "roughness": 0.8,

@@ -71,26 +71,62 @@ def set_linear_rotation(obj, frame_start, frame_end, degrees):
         obj.keyframe_insert(data_path="rotation_euler", index=2, frame=frame_start)
         obj.rotation_euler = (0, 0, math.radians(degrees))
         obj.keyframe_insert(data_path="rotation_euler", index=2, frame=frame_end)
+    # LINEAR extrapolation ensures constant rate through the loop point
+    if obj.animation_data and obj.animation_data.action:
+        action = obj.animation_data.action
+        try:
+            fcurves = action.fcurves  # Blender < 4.4
+        except AttributeError:
+            fcurves = [fc for layer in getattr(action, 'layers', [])
+                          for strip in layer.strips
+                          for cb in strip.channelbags
+                          for fc in cb.fcurves]
+        for fc in fcurves:
+            if fc.data_path == "rotation_euler" and fc.array_index == 2:
+                fc.extrapolation = 'LINEAR'
 
 
-def animate_drop(obj, final_z, drop_start, drop_duration, drop_height, overshoot, total_frames):
-    # Clear only location Z animation
+def animate_layer(obj, final_z, layer_idx, n_active, anim_cfg):
+    fly_first   = anim_cfg['fly_off_first_frame']
+    stagger     = anim_cfg['stagger_frames']
+    dur         = anim_cfg['duration_frames']
+    gap         = anim_cfg['gap_frames']
+    height      = anim_cfg['drop_height']
+    overshoot   = anim_cfg['overshoot']
+    total       = anim_cfg['total_frames']
+    easing_type = anim_cfg.get('easing_type', 'BEZIER')
+
+    fly_start  = fly_first + (n_active - 1 - layer_idx) * stagger
+    fly_end    = fly_start + dur
+
+    drop_first = fly_first + (n_active - 1) * stagger + dur + gap
+    drop_start = drop_first + layer_idx * stagger
+    drop_end   = drop_start + dur
+
+    gone_z = final_z + height
+    land_z = final_z - overshoot
+
     obj.animation_data_clear()
-    start_z  = final_z + drop_height
-    land_z   = final_z - overshoot
-    drop_end = drop_start + drop_duration
+
+    with kf_interp(easing_type):
+        obj.location.z = final_z
+        obj.keyframe_insert(data_path="location", index=2, frame=1)
+        obj.keyframe_insert(data_path="location", index=2, frame=fly_start)
+        obj.location.z = gone_z
+        obj.keyframe_insert(data_path="location", index=2, frame=fly_end)
 
     with kf_interp('CONSTANT'):
-        obj.location.z = start_z
-        obj.keyframe_insert(data_path="location", index=2, frame=1)
-        obj.keyframe_insert(data_path="location", index=2, frame=drop_start)
+        obj.location.z = gone_z
+        obj.keyframe_insert(data_path="location", index=2, frame=fly_end + 1)
 
-    with kf_interp('BEZIER'):
+    with kf_interp(easing_type):
+        obj.location.z = gone_z
+        obj.keyframe_insert(data_path="location", index=2, frame=drop_start)
         obj.location.z = land_z
         obj.keyframe_insert(data_path="location", index=2, frame=drop_end - 4)
         obj.location.z = final_z
         obj.keyframe_insert(data_path="location", index=2, frame=drop_end)
-        obj.keyframe_insert(data_path="location", index=2, frame=total_frames)
+        obj.keyframe_insert(data_path="location", index=2, frame=total)
 
 
 def clear_lights_and_camera():
@@ -228,32 +264,21 @@ def main():
     set_linear_rotation(rot_empty, 1, anim_cfg['total_frames'],
                         anim_cfg['rotation_degrees'])
 
-    n            = len(layers)
-    first_drop   = anim_cfg['first_drop_frame']
-    last_drop    = anim_cfg['last_drop_start_frame']
-    duration     = anim_cfg['drop_duration_frames']
-    drop_height  = anim_cfg['drop_height']
-    overshoot    = anim_cfg['overshoot']
-    total_frames = anim_cfg['total_frames']
-
-    for i, lc in enumerate(layers):
+    # Apply visibility and collect active (visible) layers
+    active = []
+    for lc in layers:
         obj = bpy.data.objects.get(lc['name'])
         if obj is None:
             continue
+        hidden = lc.get('hidden', False)
+        obj.hide_render   = hidden
+        obj.hide_viewport = hidden
+        if not hidden:
+            active.append((lc, obj))
 
-        if i == 0:
-            # Substrate is already in place — pin it at final Z for all frames
-            obj.animation_data_clear()
-            final_z = obj.location.z
-            with kf_interp('CONSTANT'):
-                obj.keyframe_insert(data_path="location", index=2, frame=1)
-                obj.keyframe_insert(data_path="location", index=2, frame=total_frames)
-            continue
-
-        t = i / max(n - 1, 1)
-        drop_start = int(first_drop + t * (last_drop - first_drop))
-        animate_drop(obj, obj.location.z, drop_start, duration,
-                     drop_height, overshoot, total_frames)
+    n_active = len(active)
+    for layer_idx, (lc, obj) in enumerate(active):
+        animate_layer(obj, obj.location.z, layer_idx, n_active, anim_cfg)
 
     # Sync frame range, fps, and motion blur from config
     scene = bpy.context.scene
@@ -261,6 +286,16 @@ def main():
     scene.frame_end   = anim_cfg['total_frames']
     scene.render.fps  = anim_cfg['fps']
     scene.render.use_motion_blur = cfg.get('motion_blur', False)
+    engine = cfg.get('render_engine', 'CYCLES')
+    if engine == 'CYCLES':
+        scene.render.engine = 'CYCLES'
+    else:
+        for eng in ('BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE'):
+            try:
+                scene.render.engine = eng
+                break
+            except TypeError:
+                continue
 
     bpy.context.scene.frame_set(1)
     print("update_scene.py done — materials, camera, lighting, and animation updated.")
