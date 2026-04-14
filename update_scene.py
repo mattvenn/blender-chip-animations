@@ -19,7 +19,13 @@ def bbox_z_extent(obj):
     zs = [Vector(c).z for c in obj.bound_box]
     return min(zs), max(zs)
 
-CONFIG_PATH = "/Users/mattvenn/blender/layer_config.json"
+# Derive config path from the open .blend file's location.
+# The config is read from the same folder as the .blend (e.g. animations/chip_layers/).
+if not bpy.data.filepath:
+    raise RuntimeError(
+        "No .blend file is open/saved. Open your animation's chip_scene.blend first."
+    )
+CONFIG_PATH = os.path.join(os.path.dirname(bpy.data.filepath), "layer_config.json")
 
 # ─────────────────────────────────────────────
 # Helpers (same as build_scene.py)

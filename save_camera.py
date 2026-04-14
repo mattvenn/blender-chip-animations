@@ -8,7 +8,12 @@ so that update_scene.py restores them exactly on every run.
 import bpy
 import json
 
-CONFIG_PATH = "/Users/mattvenn/blender/layer_config.json"
+# Derive config path from the open .blend file's location.
+if not bpy.data.filepath:
+    raise RuntimeError(
+        "No .blend file is open/saved. Open your animation's chip_scene.blend first."
+    )
+CONFIG_PATH = os.path.join(os.path.dirname(bpy.data.filepath), "layer_config.json")
 
 with open(CONFIG_PATH) as f:
     cfg = json.load(f)

@@ -10,7 +10,15 @@ import math
 import os
 from mathutils import Vector, Matrix
 
-CONFIG_PATH = "/Users/mattvenn/blender/layer_config.json"
+# Derive config path from the open .blend file's location.
+# Before running this script, do File > Save As into your animation folder
+# (e.g. animations/chip_layers/chip_scene.blend) — the config is read from that same folder.
+if not bpy.data.filepath:
+    raise RuntimeError(
+        "Save a blank .blend into your animation folder first "
+        "(File > Save As → animations/<name>/chip_scene.blend), then run this script."
+    )
+CONFIG_PATH = os.path.join(os.path.dirname(bpy.data.filepath), "layer_config.json")
 
 # ─────────────────────────────────────────────
 # Helpers
