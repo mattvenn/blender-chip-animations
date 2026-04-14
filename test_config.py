@@ -31,6 +31,9 @@ ANIMATION_TYPES = {
         'total_frames', 'fps',
         'flight_duration_frames', 'drift_start_frame', 'drift_end_frame', 'via_drift_scale',
     ],
+    'drift_loop': [
+        'total_frames', 'fps', 'zoom_distance',
+    ],
 }
 
 # ─────────────────────────────────────────────

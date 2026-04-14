@@ -24,6 +24,12 @@ cam = bpy.context.scene.camera
 if cam is None:
     print("ERROR: No active camera in scene.")
 else:
+    # Clear animation so keyframes don't override the saved position and so the
+    # camera is free to move after this script runs. Run update_scene.py to
+    # re-apply the loop animation once you are happy with the position.
+    cam.animation_data_clear()
+    print("Camera animation cleared — camera is now free to move.")
+
     cfg['camera']['location']       = [round(v, 6) for v in cam.location]
     cfg['camera']['rotation_euler'] = [round(v, 6) for v in cam.rotation_euler]
     cfg['camera']['focal_length']   = round(cam.data.lens, 2)

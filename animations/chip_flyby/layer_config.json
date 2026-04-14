@@ -3,13 +3,11 @@
   "scale": 0.01,
   "layer_thickness": 20,
   "animation": {
-    "type": "camera_flythrough",
-    "total_frames": 110,
+    "type": "drift_loop",
+    "total_frames": 120,
     "fps": 24,
-    "flight_duration_frames": 100,
-    "drift_start_frame": 0,
-    "drift_end_frame": 80,
-    "via_drift_scale": -1.0,
+    "via_drift_scale": 3.0,
+    "zoom_distance": 0.05,
     "easing_type": "BEZIER"
   },
   "render_engine": "CYCLES",
@@ -21,20 +19,16 @@
     "rim_energy": 1000.0
   },
   "camera": {
-    "focal_length": 5.0,
-    "flight_axis": "Y",
-    "flight_direction": 1,
-    "start_offset": 0.0,
-    "height_offset": 0.0,
+    "focal_length": 56.0,
     "location": [
-      0.0,
-      0.248336,
-      0.175
+      -1.829259,
+      -1.447391,
+      3.474957
     ],
     "rotation_euler": [
-      1.570796,
-      -0.0,
-      0.0
+      0.626921,
+      0.0,
+      -0.94946
     ]
   },
   "layers": [

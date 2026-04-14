@@ -142,6 +142,87 @@ def animate_layer(obj, final_z, layer_idx, n_active, anim_cfg):
         obj.keyframe_insert(data_path="location", index=2, frame=total)
 
 
+def _add_via_driver(obj, data_path, index, expression, below_obj, above_obj):
+    """Add a scripted driver to obj[data_path][index] with variables bz/az."""
+    fc  = obj.driver_add(data_path, index)
+    drv = fc.driver
+    drv.type       = 'SCRIPTED'
+    drv.expression = expression
+
+    for var_name, target_obj in (("bz", below_obj), ("az", above_obj)):
+        v = drv.variables.new()
+        v.name = var_name
+        v.type = 'TRANSFORMS'
+        v.targets[0].id             = target_obj
+        v.targets[0].transform_type  = 'LOC_Z'
+        v.targets[0].transform_space = 'LOCAL_SPACE'
+
+
+def animate_drift_loop_layers(layer_stack, anim_cfg):
+    """
+    Non-via layers: 3-keyframe BEZIER loop mirrored about chip_center_z.
+    Via layers: Blender drivers that read neighbouring layer positions every
+    frame and elastically scale/position the via to always span the exact gap.
+    Collapses to zero when neighbours cross.  Frame 1 == frame total.
+    """
+    easing = anim_cfg.get('easing_type', 'BEZIER')
+    total  = anim_cfg['total_frames']
+    mid    = total // 2
+
+    chip_z_bottom = layer_stack[0]['z_init'] + layer_stack[0]['z_min_local']
+    chip_z_top    = (layer_stack[-1]['z_init']
+                     + layer_stack[-1]['z_min_local']
+                     + layer_stack[-1]['height'])
+    chip_center_z = (chip_z_bottom + chip_z_top) / 2
+
+    for i, entry in enumerate(layer_stack):
+        obj       = entry['obj']
+        is_via    = entry['is_via']
+        z_init    = entry['z_init']
+        z_mid_pos = 2 * chip_center_z - z_init
+
+        obj.animation_data_clear()
+
+        if not is_via:
+            with kf_interp(easing):
+                obj.location.z = z_init
+                obj.keyframe_insert(data_path="location", index=2, frame=1)
+                obj.location.z = z_mid_pos
+                obj.keyframe_insert(data_path="location", index=2, frame=mid)
+                obj.location.z = z_init
+                obj.keyframe_insert(data_path="location", index=2, frame=total)
+        else:
+            below = next((layer_stack[j] for j in range(i - 1, -1, -1)
+                          if not layer_stack[j]['is_via']), None)
+            above = next((layer_stack[j] for j in range(i + 1, len(layer_stack))
+                          if not layer_stack[j]['is_via']), None)
+
+            if not below or not above:
+                # No neighbours — animate like a plain layer
+                with kf_interp(easing):
+                    obj.location.z = z_init
+                    obj.keyframe_insert(data_path="location", index=2, frame=1)
+                    obj.location.z = z_mid_pos
+                    obj.keyframe_insert(data_path="location", index=2, frame=mid)
+                    obj.location.z = z_init
+                    obj.keyframe_insert(data_path="location", index=2, frame=total)
+                continue
+
+            # Constants baked into the driver expressions (local-space geometry offsets)
+            b_top = below['z_min_local'] + below['height']  # local top of below layer
+            a_bot = above['z_min_local']                     # local bottom of above layer
+            v_bot = entry['z_min_local']                     # local bottom of via
+            h     = entry['height']                          # original via height
+
+            # scale.z: abs() so the via stays visible after layers cross
+            s_expr = f"abs(az+{a_bot:.8f}-bz-{b_top:.8f})/{h:.8f}"
+            # location.z: sit on whichever surface is currently lower
+            l_expr = f"min(bz+{b_top:.8f},az+{a_bot:.8f})-{v_bot:.8f}*abs(az+{a_bot:.8f}-bz-{b_top:.8f})/{h:.8f}"
+
+            _add_via_driver(obj, "scale",    2, s_expr, below['obj'], above['obj'])
+            _add_via_driver(obj, "location", 2, l_expr, below['obj'], above['obj'])
+
+
 def animate_flythrough_layers(layer_stack, anim_cfg):
     """
     Drift layers symmetrically apart from the chip centre.
@@ -255,6 +336,41 @@ def setup_camera(cfg, focus_obj):
         cam_data.dof.aperture_fstop = fstop
     else:
         cam_data.dof.use_dof = False
+    return cam_obj
+
+
+def setup_camera_drift_loop(cam_cfg, anim_cfg):
+    """Static camera from saved position; animates a zoom-in to midpoint and back."""
+    cam_data = bpy.data.cameras.new("Camera")
+    cam_obj  = bpy.data.objects.new("Camera", cam_data)
+    bpy.context.scene.collection.objects.link(cam_obj)
+    bpy.context.scene.camera = cam_obj
+
+    cam_data.lens        = cam_cfg['focal_length']
+    cam_data.dof.use_dof = False
+
+    start_loc = Vector(cam_cfg['location'])
+    cam_obj.location       = start_loc
+    cam_obj.rotation_euler = cam_cfg['rotation_euler']
+
+    # Camera forward direction in world space (local -Z)
+    rot     = cam_obj.rotation_euler.to_matrix()
+    forward = (rot @ Vector((0, 0, -1))).normalized()
+
+    zoom_dist = anim_cfg.get('zoom_distance', 0.05)
+    total     = anim_cfg['total_frames']
+    mid       = total // 2
+    easing    = anim_cfg.get('easing_type', 'BEZIER')
+    mid_loc   = start_loc + forward * zoom_dist
+
+    with kf_interp(easing):
+        cam_obj.location = start_loc
+        cam_obj.keyframe_insert(data_path="location", frame=1)
+        cam_obj.location = mid_loc
+        cam_obj.keyframe_insert(data_path="location", frame=mid)
+        cam_obj.location = start_loc
+        cam_obj.keyframe_insert(data_path="location", frame=total)
+
     return cam_obj
 
 
@@ -418,6 +534,8 @@ def main():
         setup_camera(cfg['camera'], focus_empty)
     elif anim_type == 'camera_flythrough':
         setup_camera_flythrough(cfg['camera'], anim_cfg, chip_bounds, chip_center_z)
+    elif anim_type == 'drift_loop':
+        setup_camera_drift_loop(cfg['camera'], anim_cfg)
     else:
         print(f"WARNING: unknown animation type '{anim_type}', skipping camera setup")
 
@@ -447,6 +565,9 @@ def main():
     elif anim_type == 'camera_flythrough':
         animate_flythrough_layers(active_stack, anim_cfg)
         print(f"  Flythrough drift set for {len(active_stack)} layers")
+    elif anim_type == 'drift_loop':
+        animate_drift_loop_layers(active_stack, anim_cfg)
+        print(f"  Drift loop set for {len(active_stack)} layers")
 
     # ── Render settings ───────────────────────────────────────
     scene = bpy.context.scene
