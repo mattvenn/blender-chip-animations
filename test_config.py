@@ -29,7 +29,7 @@ ANIMATION_TYPES = {
     ],
     'camera_flythrough': [
         'total_frames', 'fps',
-        'layer_gap', 'drift_speed', 'camera_start_z', 'camera_end_z',
+        'flight_duration_frames', 'drift_start_frame', 'drift_end_frame', 'via_drift_scale',
     ],
 }
 
@@ -111,8 +111,8 @@ def validate(path):
     cam = cfg['camera']
     for key in REQUIRED_CAMERA_COMMON:
         r.check(key in cam, f"camera missing required key '{key}'")
-    r.check('location' in cam or 'distance' in cam,
-            "camera needs either 'location' or 'distance'")
+    r.check('location' in cam or 'distance' in cam or 'flight_axis' in cam,
+            "camera needs 'location', 'distance', or 'flight_axis'")
     if 'location' in cam:
         r.check(len(cam['location']) == 3, "camera.location must have 3 components")
     if 'rotation_euler' in cam:

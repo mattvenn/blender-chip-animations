@@ -7,6 +7,7 @@ so that update_scene.py restores them exactly on every run.
 
 import bpy
 import json
+import os
 
 # Derive config path from the open .blend file's location.
 if not bpy.data.filepath:

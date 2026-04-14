@@ -1,6 +1,6 @@
 """
 update_scene.py
-Run this after import_layers.py has been run once and the .blend saved.
+Run after build_scene.py has been run once and the .blend saved.
 Re-applies materials, z-positions, camera, lighting, and animation
 from layer_config.json WITHOUT re-importing any STL geometry.
 
@@ -11,16 +11,27 @@ import bpy
 import json
 import math
 import os
+import contextlib
 from mathutils import Vector
 
 
 def bbox_z_extent(obj):
-    """Return (z_min, z_max) of obj in local space (after scale applied)."""
     zs = [Vector(c).z for c in obj.bound_box]
     return min(zs), max(zs)
 
+
+def compute_chip_bounds(objects):
+    """Return (x_min, x_max, y_min, y_max) of all objects in world space."""
+    xs, ys = [], []
+    for obj in objects:
+        for c in obj.bound_box:
+            v = obj.matrix_world @ Vector(c)
+            xs.append(v.x)
+            ys.append(v.y)
+    return min(xs), max(xs), min(ys), max(ys)
+
+
 # Derive config path from the open .blend file's location.
-# The config is read from the same folder as the .blend (e.g. animations/chip_layers/).
 if not bpy.data.filepath:
     raise RuntimeError(
         "No .blend file is open/saved. Open your animation's chip_scene.blend first."
@@ -28,7 +39,7 @@ if not bpy.data.filepath:
 CONFIG_PATH = os.path.join(os.path.dirname(bpy.data.filepath), "layer_config.json")
 
 # ─────────────────────────────────────────────
-# Helpers (same as build_scene.py)
+# Helpers
 # ─────────────────────────────────────────────
 
 def load_config(path):
@@ -57,8 +68,6 @@ def make_material(layer_cfg):
     return mat
 
 
-import contextlib
-
 @contextlib.contextmanager
 def kf_interp(interp_type):
     prefs = bpy.context.preferences.edit
@@ -77,11 +86,10 @@ def set_linear_rotation(obj, frame_start, frame_end, degrees):
         obj.keyframe_insert(data_path="rotation_euler", index=2, frame=frame_start)
         obj.rotation_euler = (0, 0, math.radians(degrees))
         obj.keyframe_insert(data_path="rotation_euler", index=2, frame=frame_end)
-    # LINEAR extrapolation ensures constant rate through the loop point
     if obj.animation_data and obj.animation_data.action:
         action = obj.animation_data.action
         try:
-            fcurves = action.fcurves  # Blender < 4.4
+            fcurves = action.fcurves
         except AttributeError:
             fcurves = [fc for layer in getattr(action, 'layers', [])
                           for strip in layer.strips
@@ -104,7 +112,6 @@ def animate_layer(obj, final_z, layer_idx, n_active, anim_cfg):
 
     fly_start  = fly_first + (n_active - 1 - layer_idx) * stagger
     fly_end    = fly_start + dur
-
     drop_first = fly_first + (n_active - 1) * stagger + dur + gap
     drop_start = drop_first + layer_idx * stagger
     drop_end   = drop_start + dur
@@ -135,6 +142,84 @@ def animate_layer(obj, final_z, layer_idx, n_active, anim_cfg):
         obj.keyframe_insert(data_path="location", index=2, frame=total)
 
 
+def animate_flythrough_layers(layer_stack, anim_cfg):
+    """
+    Drift layers symmetrically apart from the chip centre.
+
+    Vias above centre grow upward (bottom fixed, top rises).
+    Vias below centre grow downward (top fixed, bottom falls).
+    The centre of the chip stays stationary.
+    """
+    drift_start = max(1, anim_cfg['drift_start_frame'])
+    drift_end   = anim_cfg['drift_end_frame']
+    via_scale   = anim_cfg['via_drift_scale']
+    easing      = anim_cfg.get('easing_type', 'BEZIER')
+
+    # Find chip centre Z from assembled bounding extents
+    chip_z_bottom = layer_stack[0]['z_init'] + layer_stack[0]['z_min_local']
+    chip_z_top    = (layer_stack[-1]['z_init']
+                     + layer_stack[-1]['z_min_local']
+                     + layer_stack[-1]['height'])
+    chip_center_z = (chip_z_bottom + chip_z_top) / 2
+
+    # Tag each via: grows 'up' (above centre) or 'down' (below centre)
+    for entry in layer_stack:
+        if entry['is_via']:
+            via_mid = entry['z_init'] + entry['z_min_local'] + entry['height'] / 2
+            entry['_via_dir'] = 'up' if via_mid >= chip_center_z else 'down'
+
+    # Compute signed drift for each layer:
+    #   +drift from every 'up' via that sits below this layer (pushes it upward)
+    #   -drift from every 'down' via that sits above this layer (pushes it downward)
+    for i, entry in enumerate(layer_stack):
+        z_drift = 0.0
+        for j, other in enumerate(layer_stack):
+            if not other['is_via']:
+                continue
+            growth = other['height'] * (via_scale - 1.0)
+            if other['_via_dir'] == 'up' and j < i:
+                z_drift += growth
+            elif other['_via_dir'] == 'down' and j > i:
+                z_drift -= growth
+        entry['_z_drift'] = z_drift
+
+    for entry in layer_stack:
+        obj         = entry['obj']
+        z_init      = entry['z_init']
+        z_drift     = entry['_z_drift']
+        is_via      = entry['is_via']
+        z_min_local = entry['z_min_local']
+
+        obj.animation_data_clear()
+
+        if is_via:
+            if entry['_via_dir'] == 'up':
+                pivot_correction = -z_min_local * (via_scale - 1.0)
+            else:
+                z_max_local = z_min_local + entry['height']
+                pivot_correction = -z_max_local * (via_scale - 1.0)
+            z_final = z_init + z_drift + pivot_correction
+        else:
+            z_final = z_init + z_drift
+
+        with kf_interp(easing):
+            obj.location.z = z_init
+            obj.keyframe_insert(data_path="location", index=2, frame=1)
+            if drift_start > 1:
+                obj.keyframe_insert(data_path="location", index=2, frame=drift_start)
+            obj.location.z = z_final
+            obj.keyframe_insert(data_path="location", index=2, frame=drift_end)
+
+        if is_via:
+            with kf_interp(easing):
+                obj.scale.z = 1.0
+                obj.keyframe_insert(data_path="scale", index=2, frame=1)
+                if drift_start > 1:
+                    obj.keyframe_insert(data_path="scale", index=2, frame=drift_start)
+                obj.scale.z = via_scale
+                obj.keyframe_insert(data_path="scale", index=2, frame=drift_end)
+
+
 def clear_lights_and_camera():
     for obj in list(bpy.data.objects):
         if obj.type in ('LIGHT', 'CAMERA'):
@@ -148,7 +233,6 @@ def setup_camera(cfg, focus_obj):
     bpy.context.scene.camera = cam_obj
 
     if 'location' in cfg and 'rotation_euler' in cfg:
-        # Use exact transform captured from viewport
         cam_obj.location       = cfg['location']
         cam_obj.rotation_euler = cfg['rotation_euler']
     else:
@@ -163,7 +247,7 @@ def setup_camera(cfg, focus_obj):
         direction = focus_obj.location - cam_obj.location
         cam_obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-    cam_data.lens     = cfg['focal_length']
+    cam_data.lens = cfg['focal_length']
     fstop = cfg.get('dof_fstop', 0)
     if fstop > 0:
         cam_data.dof.use_dof        = True
@@ -171,6 +255,62 @@ def setup_camera(cfg, focus_obj):
         cam_data.dof.aperture_fstop = fstop
     else:
         cam_data.dof.use_dof = False
+    return cam_obj
+
+
+def setup_camera_flythrough(cam_cfg, anim_cfg, chip_bounds, chip_center_z):
+    cam_data = bpy.data.cameras.new("Camera")
+    cam_obj  = bpy.data.objects.new("Camera", cam_data)
+    bpy.context.scene.collection.objects.link(cam_obj)
+    bpy.context.scene.camera = cam_obj
+
+    cam_data.lens        = cam_cfg['focal_length']
+    cam_data.dof.use_dof = False
+
+    x_min, x_max, y_min, y_max = chip_bounds
+    axis      = cam_cfg.get('flight_axis', 'Y')
+    direction = cam_cfg.get('flight_direction', 1)
+    offset    = cam_cfg.get('start_offset', 2.0)
+    height_z  = chip_center_z + cam_cfg.get('height_offset', 0.0)
+
+    if axis == 'Y':
+        if direction >= 0:
+            start_pos = Vector((0, y_min - offset, height_z))
+            end_pos   = Vector((0, y_max + offset, height_z))
+        else:
+            start_pos = Vector((0, y_max + offset, height_z))
+            end_pos   = Vector((0, y_min - offset, height_z))
+    else:  # X
+        if direction >= 0:
+            start_pos = Vector((x_min - offset, 0, height_z))
+            end_pos   = Vector((x_max + offset, 0, height_z))
+        else:
+            start_pos = Vector((x_max + offset, 0, height_z))
+            end_pos   = Vector((x_min - offset, 0, height_z))
+
+    fly_dir = (end_pos - start_pos).normalized()
+    cam_obj.rotation_euler = fly_dir.to_track_quat('-Z', 'Y').to_euler()
+
+    flight_frames = anim_cfg['flight_duration_frames']
+    cam_obj.location = start_pos
+    cam_obj.keyframe_insert(data_path="location", frame=1)
+    cam_obj.location = end_pos
+    cam_obj.keyframe_insert(data_path="location", frame=flight_frames + 1)
+
+    if cam_obj.animation_data and cam_obj.animation_data.action:
+        action = cam_obj.animation_data.action
+        try:
+            fcurves = action.fcurves
+        except AttributeError:
+            fcurves = [fc for layer in getattr(action, 'layers', [])
+                          for strip in layer.strips
+                          for cb in strip.channelbags
+                          for fc in cb.fcurves]
+        for fc in fcurves:
+            fc.extrapolation = 'LINEAR'
+            for kp in fc.keyframe_points:
+                kp.interpolation = 'LINEAR'
+
     return cam_obj
 
 
@@ -217,9 +357,11 @@ def main():
     cfg       = load_config(CONFIG_PATH)
     layers    = cfg['layers']
     anim_cfg  = cfg['animation']
+    anim_type = anim_cfg.get('type', 'layer_explode_loop')
     light_cfg = cfg.get('lighting', {})
 
     # ── Materials & Z positions ───────────────────────────────
+    layer_stack = []
     missing = []
     current_z = 0.0
     for lc in layers:
@@ -228,24 +370,36 @@ def main():
             missing.append(lc['name'])
             continue
 
-        # Stack flush on top of previous layer
         z_min, z_max = bbox_z_extent(obj)
         obj.location.z = current_z - z_min
-        current_z += (z_max - z_min)
+        height = z_max - z_min
+        current_z += height
 
-        # Material
         mat = make_material(lc)
         if obj.data.materials:
             obj.data.materials[0] = mat
         else:
             obj.data.materials.append(mat)
 
+        layer_stack.append({
+            'lc':          lc,
+            'obj':         obj,
+            'z_init':      obj.location.z,
+            'height':      height,
+            'z_min_local': z_min,
+            'is_via':      lc.get('is_via', False),
+        })
+
     if missing:
         print(f"WARNING: objects not found (run build_scene.py first): {missing}")
 
-    # ── Camera & lighting ─────────────────────────────────────
-    chip_center_z = current_z / 2
+    valid_objects = [e['obj'] for e in layer_stack]
 
+    # ── Chip geometry ─────────────────────────────────────────
+    chip_center_z = current_z / 2
+    chip_bounds   = compute_chip_bounds(valid_objects) if valid_objects else (0, 0, 0, 0)
+
+    # ── Focus Empty ───────────────────────────────────────────
     focus_empty = bpy.data.objects.get("FocusPoint")
     if focus_empty:
         focus_empty.location.z = chip_center_z
@@ -257,41 +411,50 @@ def main():
         focus_empty.name        = "FocusPoint"
         focus_empty.hide_render = True
 
+    # ── Camera & lighting ─────────────────────────────────────
     clear_lights_and_camera()
-    setup_camera(cfg['camera'], focus_empty)
+
+    if anim_type == 'layer_explode_loop':
+        setup_camera(cfg['camera'], focus_empty)
+    elif anim_type == 'camera_flythrough':
+        setup_camera_flythrough(cfg['camera'], anim_cfg, chip_bounds, chip_center_z)
+    else:
+        print(f"WARNING: unknown animation type '{anim_type}', skipping camera setup")
+
     setup_lighting(chip_center_z, light_cfg)
 
-    # ── Animation ─────────────────────────────────────────────
-    rot_empty = bpy.data.objects.get("ChipRotation")
-    if rot_empty is None:
-        print("ERROR: 'ChipRotation' empty not found — run import_layers.py first.")
-        return
-
-    set_linear_rotation(rot_empty, 1, anim_cfg['total_frames'],
-                        anim_cfg['rotation_degrees'])
-
-    # Apply visibility and collect active (visible) layers
-    active = []
-    for lc in layers:
-        obj = bpy.data.objects.get(lc['name'])
-        if obj is None:
-            continue
-        hidden = lc.get('hidden', False)
-        obj.hide_render   = hidden
-        obj.hide_viewport = hidden
+    # ── Visibility & active stack ─────────────────────────────
+    active_stack = []
+    for entry in layer_stack:
+        hidden = entry['lc'].get('hidden', False)
+        entry['obj'].hide_render   = hidden
+        entry['obj'].hide_viewport = hidden
         if not hidden:
-            active.append((lc, obj))
+            active_stack.append(entry)
 
-    n_active = len(active)
-    for layer_idx, (lc, obj) in enumerate(active):
-        animate_layer(obj, obj.location.z, layer_idx, n_active, anim_cfg)
+    # ── Animation ─────────────────────────────────────────────
+    if anim_type == 'layer_explode_loop':
+        rot_empty = bpy.data.objects.get("ChipRotation")
+        if rot_empty is None:
+            print("ERROR: 'ChipRotation' empty not found — run build_scene.py first.")
+            return
+        set_linear_rotation(rot_empty, 1, anim_cfg['total_frames'],
+                            anim_cfg['rotation_degrees'])
+        n_active = len(active_stack)
+        for layer_idx, entry in enumerate(active_stack):
+            animate_layer(entry['obj'], entry['obj'].location.z, layer_idx, n_active, anim_cfg)
 
-    # Sync frame range, fps, and motion blur from config
+    elif anim_type == 'camera_flythrough':
+        animate_flythrough_layers(active_stack, anim_cfg)
+        print(f"  Flythrough drift set for {len(active_stack)} layers")
+
+    # ── Render settings ───────────────────────────────────────
     scene = bpy.context.scene
     scene.frame_start = 1
     scene.frame_end   = anim_cfg['total_frames']
     scene.render.fps  = anim_cfg['fps']
     scene.render.use_motion_blur = cfg.get('motion_blur', False)
+
     engine = cfg.get('render_engine', 'CYCLES')
     if engine == 'CYCLES':
         scene.render.engine = 'CYCLES'
@@ -304,7 +467,7 @@ def main():
                 continue
 
     bpy.context.scene.frame_set(1)
-    print("update_scene.py done — materials, camera, lighting, and animation updated.")
+    print(f"update_scene.py done — {anim_type} updated.")
 
 
 main()
