@@ -1,0 +1,240 @@
+{
+  "stl_folder": "/Users/mattvenn/blender/analog_test",
+  "scale": 0.01,
+  "layer_thickness": 10,
+  "render_engine": "CYCLES",
+  "motion_blur": false,
+  "lighting": {
+    "world_strength": 0.0,
+    "key_energy": 500.0,
+    "fill_energy": 5000.0,
+    "rim_energy": 1000.0
+  },
+  "camera": {
+    "location": [
+      -0.227854,
+      -1.799391,
+      1.856998
+    ],
+    "rotation_euler": [
+      0.418879,
+      0.0,
+      -0.003491
+    ],
+    "focal_length": 290.0
+  },
+  "animation": {
+    "type": "analog_zoom",
+    "total_frames": 160,
+    "fps": 24,
+    "start_focal_length": 50.0,
+    "overhead_chip_fraction": 0.5,
+    "hold_frames": 30,
+    "move_frames": 50,
+    "camera_waypoints": [
+      {
+        "location": [0.0, -6.04, 11.248641],
+        "rotation_euler": [0.418879, 0.0, 0.0],
+        "focal_length": 290.0
+      },
+      {
+        "location": [-0.227854, -1.799391, 1.856998],
+        "rotation_euler": [0.418879, 0.0, -0.003491],
+        "focal_length": 290.0
+      }
+    ]
+  },
+  "layers": [
+    {
+      "name": "substrate",
+      "filename": "tt_um_analog_factory_test.gds_substrate.stl",
+      "hidden": true,
+      "color": [
+        0.08,
+        0.08,
+        0.08
+      ],
+      "metallic": 0.0,
+      "roughness": 0.9,
+      "transmission": 0.0
+    },
+    {
+      "name": "nwell",
+      "filename": "tt_um_analog_factory_test.gds_nwell.stl",
+      "color": [
+        0.25,
+        0.25,
+        0.25
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "tap",
+      "filename": "tt_um_analog_factory_test.gds_tap.stl",
+      "color": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "diff",
+      "filename": "tt_um_analog_factory_test.gds_diff.stl",
+      "color": [
+        0.35,
+        0.35,
+        0.35
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "poly",
+      "filename": "tt_um_analog_factory_test.gds_poly.stl",
+      "color": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "licon",
+      "filename": "tt_um_analog_factory_test.gds_licon.stl",
+      "is_via": true,
+      "thickness_multiplier": 2,
+      "color": [
+        0.45,
+        0.45,
+        0.45
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "li1",
+      "filename": "tt_um_analog_factory_test.gds_li1.stl",
+      "color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "mcon",
+      "filename": "tt_um_analog_factory_test.gds_mcon.stl",
+      "is_via": true,
+      "thickness_multiplier": 2,
+      "color": [
+        0.55,
+        0.55,
+        0.55
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "met1",
+      "filename": "tt_um_analog_factory_test.gds_met1.stl",
+      "color": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "metallic": 0.3,
+      "roughness": 0.4,
+      "transmission": 0.0
+    },
+    {
+      "name": "via",
+      "filename": "tt_um_analog_factory_test.gds_via.stl",
+      "is_via": true,
+      "thickness_multiplier": 2,
+      "color": [
+        0.65,
+        0.65,
+        0.65
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "met2",
+      "filename": "tt_um_analog_factory_test.gds_met2.stl",
+      "color": [
+        0.016,
+        0.012,
+        0.443
+      ],
+      "metallic": 0.4,
+      "roughness": 0.3,
+      "transmission": 0.0
+    },
+    {
+      "name": "via2",
+      "filename": "tt_um_analog_factory_test.gds_via2.stl",
+      "is_via": true,
+      "thickness_multiplier": 2,
+      "color": [
+        0.7,
+        0.7,
+        0.7
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "met3",
+      "filename": "tt_um_analog_factory_test.gds_met3.stl",
+      "color": [
+        0.988,
+        0.624,
+        0.624
+      ],
+      "metallic": 0.4,
+      "roughness": 0.3,
+      "transmission": 0.0
+    },
+    {
+      "name": "via3",
+      "filename": "tt_um_analog_factory_test.gds_via3.stl",
+      "is_via": true,
+      "thickness_multiplier": 2,
+      "color": [
+        0.75,
+        0.75,
+        0.75
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "transmission": 0.0
+    },
+    {
+      "name": "met4",
+      "filename": "tt_um_analog_factory_test.gds_met4.stl",
+      "color": [
+        0.8,
+        0.8,
+        0.95
+      ],
+      "metallic": 0.4,
+      "roughness": 0.3,
+      "transmission": 0.0
+    }
+  ]
+}

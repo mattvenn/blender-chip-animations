@@ -185,6 +185,71 @@ def setup_camera_drift_loop(cam_cfg, anim_cfg):
     return cam_obj
 
 
+def setup_camera_analog_zoom(cam_cfg, anim_cfg, chip_bounds, chip_center_z):
+    """
+    Top-down start, then for each waypoint in anim_cfg['camera_waypoints']:
+      hold hold_frames, then BEZIER ease over move_frames.
+    Location, rotation, and focal length are all animated.
+    """
+    cam_data = bpy.data.cameras.new("Camera")
+    cam_obj  = bpy.data.objects.new("Camera", cam_data)
+    bpy.context.scene.collection.objects.link(cam_obj)
+    bpy.context.scene.camera = cam_obj
+    cam_data.dof.use_dof = False
+
+    x_min, x_max, y_min, y_max = chip_bounds
+    chip_h = y_max - y_min
+
+    start_fl = anim_cfg.get('start_focal_length', 50.0)
+    sensor_h = 36.0 * (1080.0 / 1920.0)
+    fraction = anim_cfg.get('overhead_chip_fraction', 0.5)
+    overhead_h = chip_center_z + chip_h * start_fl / (fraction * sensor_h)
+
+    start_loc = Vector((0.0, 0.0, overhead_h))
+    start_rot = (0.0, 0.0, 0.0)
+
+    hold_frames = anim_cfg.get('hold_frames', 30)
+    move_frames = anim_cfg.get('move_frames', 50)
+    waypoints   = anim_cfg.get('camera_waypoints', [cam_cfg])
+
+    def insert_all(frame, loc, rot, fl, interp):
+        with kf_interp(interp):
+            cam_obj.location       = loc
+            cam_obj.rotation_euler = rot
+            cam_data.lens          = fl
+            cam_obj.keyframe_insert(data_path="location",       frame=frame)
+            cam_obj.keyframe_insert(data_path="rotation_euler", frame=frame)
+            cam_data.keyframe_insert(data_path="lens",          frame=frame)
+
+    # Frame 1: hold start state (CONSTANT so nothing moves yet)
+    insert_all(1, start_loc, start_rot, start_fl, 'CONSTANT')
+
+    cur_frame = 1
+    cur_loc, cur_rot, cur_fl = start_loc, start_rot, start_fl
+
+    for wp in waypoints:
+        wp_loc = Vector(wp['location'])
+        wp_rot = wp['rotation_euler']
+        wp_fl  = wp.get('focal_length', cur_fl)
+
+        hold_frame = cur_frame + hold_frames
+        move_frame = hold_frame + move_frames
+
+        # Repeat current state at hold_frame with BEZIER so ease-in starts here
+        insert_all(hold_frame, cur_loc, cur_rot, cur_fl, 'BEZIER')
+        # Arrive at waypoint
+        insert_all(move_frame, wp_loc, wp_rot, wp_fl, 'BEZIER')
+
+        print(f"  Waypoint: frames {hold_frame}-{move_frame} → "
+              f"loc={tuple(round(v,3) for v in wp_loc)}, fl={wp_fl}")
+
+        cur_frame = move_frame
+        cur_loc, cur_rot, cur_fl = wp_loc, wp_rot, wp_fl
+
+    print(f"  Analog zoom: overhead_h={overhead_h:.3f}, chip_h={chip_h:.3f}")
+    return cam_obj
+
+
 def setup_camera_flythrough(cam_cfg, anim_cfg, chip_bounds, chip_center_z):
     """Animated camera flying through the chip along one horizontal axis."""
     cam_data = bpy.data.cameras.new("Camera")
@@ -658,6 +723,8 @@ def main():
         cam_obj = setup_camera_flythrough(cam_cfg, anim_cfg, chip_bounds, chip_center_z)
     elif anim_type == 'drift_loop':
         cam_obj = setup_camera_drift_loop(cam_cfg, anim_cfg)
+    elif anim_type == 'analog_zoom':
+        cam_obj = setup_camera_analog_zoom(cam_cfg, anim_cfg, chip_bounds, chip_center_z)
     else:
         raise ValueError(f"Unknown animation type: '{anim_type}'")
 
@@ -665,7 +732,7 @@ def main():
     setup_lighting(chip_center_z, light_cfg)
     print(f"Camera at {tuple(round(v, 2) for v in cam_obj.location)}")
 
-    # ── 8. Rotation empty (layer_explode_loop only) ───────────
+    # ── 8. Rotation empty (layer_explode_loop only) ──────────
     if anim_type == 'layer_explode_loop':
         bpy.ops.object.empty_add(type='PLAIN_AXES', location=(0, 0, 0))
         rot_empty = bpy.context.active_object
@@ -689,6 +756,8 @@ def main():
     elif anim_type == 'drift_loop':
         animate_drift_loop_layers(active_stack, anim_cfg)
         print(f"  Drift loop set for {len(active_stack)} layers")
+    elif anim_type == 'analog_zoom':
+        print(f"  analog_zoom: layers static, camera animates")
 
     # ── 10. Render settings ───────────────────────────────────
     setup_render(bpy.context.scene, anim_cfg, cfg.get('motion_blur', False), cfg)
