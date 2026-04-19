@@ -317,10 +317,30 @@ def setup_lighting(chip_center_z, light_cfg):
         world = bpy.data.worlds.new("World")
         bpy.context.scene.world = world
     world.use_nodes = True
-    bg = world.node_tree.nodes.get('Background')
-    if bg:
-        bg.inputs['Color'].default_value    = (0.05, 0.06, 0.10, 1.0)
-        bg.inputs['Strength'].default_value = light_cfg.get('world_strength', 1.5)
+    nt = world.node_tree
+    nt.nodes.clear()
+
+    bg_color = light_cfg.get('background_color', [0.05, 0.06, 0.10])
+    r, g, b  = bg_color
+    world_strength = light_cfg.get('world_strength', 1.5)
+
+    out  = nt.nodes.new('ShaderNodeOutputWorld')
+    bg   = nt.nodes.new('ShaderNodeBackground')
+    bg.inputs['Color'].default_value    = (r, g, b, 1.0)
+    bg.inputs['Strength'].default_value = world_strength
+    nt.links.new(bg.outputs['Background'], out.inputs['Surface'])
+
+    if world_strength == 0.0:
+        # Show background_color to camera rays but contribute zero lighting
+        lp     = nt.nodes.new('ShaderNodeLightPath')
+        bg_cam = nt.nodes.new('ShaderNodeBackground')
+        mix    = nt.nodes.new('ShaderNodeMixShader')
+        bg_cam.inputs['Color'].default_value    = (r, g, b, 1.0)
+        bg_cam.inputs['Strength'].default_value = 1.0
+        nt.links.new(lp.outputs['Is Camera Ray'], mix.inputs['Fac'])
+        nt.links.new(bg.outputs['Background'],     mix.inputs[1])
+        nt.links.new(bg_cam.outputs['Background'], mix.inputs[2])
+        nt.links.new(mix.outputs['Shader'],        out.inputs['Surface'])
 
     def add_area(name, energy, size, loc, rot_deg):
         d   = bpy.data.lights.new(name, type='AREA')
