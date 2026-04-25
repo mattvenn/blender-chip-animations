@@ -44,6 +44,41 @@ def clear_scene():
         bpy.data.lights.remove(block)
 
 
+def recreate_cut_cube(cfg):
+    """Recreates cut_cube from saved transform and material in layer_config.json."""
+    cc = cfg.get('cut_cube')
+    if not cc:
+        return
+    bpy.ops.mesh.primitive_cube_add(size=2, location=cc['location'])
+    cube = bpy.context.active_object
+    cube.name           = "cut_cube"
+    cube.rotation_euler = cc['rotation_euler']
+    if 'dimensions' in cc:
+        cube.dimensions = cc['dimensions']
+    else:
+        cube.scale = cc['scale']
+
+    mat_data = cc.get('material')
+    if mat_data:
+        mat = make_material({'name': 'cut_cube', **mat_data})
+        if cube.data.materials:
+            cube.data.materials[0] = mat
+        else:
+            cube.data.materials.append(mat)
+
+    print(f"cut_cube recreated: loc={cc['location']}  dimensions={cube.dimensions[:]}")
+
+
+def add_boolean_cuts(active_stack, cutter_obj):
+    """Add a DIFFERENCE Boolean modifier to every visible layer using cutter_obj."""
+    for entry in active_stack:
+        mod           = entry['obj'].modifiers.new(name="CutCube", type='BOOLEAN')
+        mod.operation = 'DIFFERENCE'
+        mod.object    = cutter_obj
+        mod.solver    = 'FLOAT'
+    print(f"  Boolean DIFFERENCE (FAST) applied to {len(active_stack)} layers")
+
+
 def import_stl(filepath):
     """Import one STL and return the new object. Handles Blender 3.x and 4.x."""
     before = set(o.name for o in bpy.data.objects)
@@ -246,8 +281,91 @@ def setup_camera_analog_zoom(cam_cfg, anim_cfg, chip_bounds, chip_center_z):
         cur_frame = move_frame
         cur_loc, cur_rot, cur_fl = wp_loc, wp_rot, wp_fl
 
+    # ── Optional outro: BEZIER ease to saved camera target ──────────────────
+    outro_frames = anim_cfg.get('outro_frames', 0)
+    if outro_frames > 0:
+        outro_end = cur_frame + outro_frames
+        # Re-anchor the last waypoint so ease-in starts cleanly from here
+        insert_all(cur_frame, cur_loc, cur_rot, cur_fl, 'BEZIER')
+        outro_loc = Vector(cam_cfg['location'])
+        outro_rot = cam_cfg['rotation_euler']
+        outro_fl  = cam_cfg.get('focal_length', cur_fl)
+        insert_all(outro_end, outro_loc, outro_rot, outro_fl, 'BEZIER')
+        anim_cfg['total_frames'] = outro_end
+        print(f"  Outro: frames {cur_frame}–{outro_end} → "
+              f"loc={tuple(round(v,3) for v in outro_loc)}, fl={outro_fl}")
+
     print(f"  Analog zoom: overhead_h={overhead_h:.3f}, chip_h={chip_h:.3f}")
-    return cam_obj
+    return cam_obj, cur_frame
+
+
+def animate_cut_cube_outro(end_frame, outro_frames):
+    """
+    Animates cut_cube.scale.z: held at 0 for the main animation, then BEZIER
+    ease from 0 to its current (final) value over end_frame → end_frame+outro_frames.
+    If the cube's origin is at its centre (Blender default), it will grow
+    symmetrically; move the origin to the bottom face first for upward growth.
+    """
+    cube = bpy.data.objects.get("cut_cube")
+    if cube is None:
+        print("  cut_cube not found — skipping outro scale animation")
+        return
+
+    target_scale_z = cube.scale.z
+    final_loc_z    = cube.location.z
+    # Top face stays fixed; cube grows downward. For a size=2 cube, the top is
+    # at location.z + scale.z, so when scale=0 the flat plane sits at the top.
+    top_z     = final_loc_z + target_scale_z
+    outro_end = end_frame + outro_frames
+
+    # ── Visibility: hidden until outro starts ────────────────────────────────
+    with kf_interp('CONSTANT'):
+        cube.hide_viewport = True
+        cube.hide_render   = True
+        cube.keyframe_insert(data_path="hide_viewport", frame=1)
+        cube.keyframe_insert(data_path="hide_render",   frame=1)
+        cube.hide_viewport = False
+        cube.hide_render   = False
+        cube.keyframe_insert(data_path="hide_viewport", frame=end_frame)
+        cube.keyframe_insert(data_path="hide_render",   frame=end_frame)
+
+    # ── Scale + location: grow downward from top ─────────────────────────────
+    with kf_interp('CONSTANT'):
+        cube.scale.z    = 0.001   # non-zero so Boolean cutter is never degenerate
+        cube.location.z = top_z
+        cube.keyframe_insert(data_path="scale",    index=2, frame=1)
+        cube.keyframe_insert(data_path="location", index=2, frame=1)
+
+    with kf_interp('BEZIER'):
+        cube.scale.z    = 0.001
+        cube.location.z = top_z
+        cube.keyframe_insert(data_path="scale",    index=2, frame=end_frame)
+        cube.keyframe_insert(data_path="location", index=2, frame=end_frame)
+
+        cube.scale.z    = target_scale_z
+        cube.location.z = final_loc_z
+        cube.keyframe_insert(data_path="scale",    index=2, frame=outro_end)
+        cube.keyframe_insert(data_path="location", index=2, frame=outro_end)
+
+    cube.scale.z    = target_scale_z
+    cube.location.z = final_loc_z
+
+    # ── Camera: Track To constraint active only during outro ─────────────────
+    cam_obj = bpy.context.scene.camera
+    if cam_obj:
+        con = cam_obj.constraints.new(type='TRACK_TO')
+        con.name       = "TrackCutCube"
+        con.target     = cube
+        con.track_axis = 'TRACK_NEGATIVE_Z'
+        con.up_axis    = 'UP_Y'
+        with kf_interp('CONSTANT'):
+            con.influence = 0.0
+            con.keyframe_insert(data_path="influence", frame=1)
+            con.keyframe_insert(data_path="influence", frame=end_frame - 1)
+            con.influence = 1.0
+            con.keyframe_insert(data_path="influence", frame=end_frame)
+
+    print(f"  cut_cube: hidden until {end_frame}, grows top-down to {outro_end}, camera tracks")
 
 
 def setup_camera_flythrough(cam_cfg, anim_cfg, chip_bounds, chip_center_z):
@@ -609,6 +727,271 @@ def animate_flythrough_layers(layer_stack, anim_cfg):
 # Render settings
 # ─────────────────────────────────────────────
 
+def create_emissive_material(name, color, strength):
+    """Principled BSDF with emission — used for FIB rect and beam."""
+    mat = bpy.data.materials.get(name)
+    if mat is None:
+        mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get('Principled BSDF')
+    if bsdf:
+        r, g, b = color
+        bsdf.inputs['Base Color'].default_value = (r, g, b, 1.0)
+        bsdf.inputs['Roughness'].default_value  = 1.0
+        for key in ('Emission Color', 'Emission'):
+            if key in bsdf.inputs:
+                bsdf.inputs[key].default_value = (r, g, b, 1.0)
+                break
+        if 'Emission Strength' in bsdf.inputs:
+            bsdf.inputs['Emission Strength'].default_value = strength
+    return mat
+
+
+def setup_camera_fib_cut(cfg, anim_cfg):
+    """BEZIER zoom from camera_start (frame 1) to camera (zoom_end_frame), then holds."""
+    cam_data = bpy.data.cameras.new("Camera")
+    cam_obj  = bpy.data.objects.new("Camera", cam_data)
+    bpy.context.scene.collection.objects.link(cam_obj)
+    bpy.context.scene.camera = cam_obj
+    cam_data.dof.use_dof = False
+
+    zoom_end  = anim_cfg.get('zoom_end_frame', 77)
+    start_cfg = cfg.get('camera_start', cfg['camera'])
+    end_cfg   = cfg['camera']
+
+    def insert_cam(frame, c, interp):
+        with kf_interp(interp):
+            cam_obj.location       = c['location']
+            cam_obj.rotation_euler = c['rotation_euler']
+            cam_data.lens          = c['focal_length']
+            cam_obj.keyframe_insert(data_path="location",       frame=frame)
+            cam_obj.keyframe_insert(data_path="rotation_euler", frame=frame)
+            cam_data.keyframe_insert(data_path="lens",          frame=frame)
+
+    insert_cam(1,        start_cfg, 'BEZIER')
+    insert_cam(zoom_end, end_cfg,   'BEZIER')
+    print(f"  FIB camera: zoom frames 1→{zoom_end}, then holds")
+    return cam_obj
+
+
+def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
+    anim_cfg     = cfg['animation']
+    sio2_cfg     = cfg.get('sio2', {})
+    fib_rect_cfg = cfg.get('fib_rect', {})
+    fib_beam_cfg = cfg.get('fib_beam', {})
+
+    sio2_start   = anim_cfg['sio2_start_frame']
+    sio2_end     = anim_cfg['sio2_end_frame']
+    beam_start   = anim_cfg['beam_start_frame']
+    cut_start    = anim_cfg['cut_start_frame']
+    cut_end      = anim_cfg['cut_end_frame']
+    raster_lines = anim_cfg.get('raster_lines', 25)
+
+    cut_cube = bpy.data.objects.get("cut_cube")
+    if cut_cube is None:
+        print("  WARNING: cut_cube not found — FIB animation incomplete")
+        return
+
+    # hide_render keeps it out of renders; hide_viewport must stay False or the
+    # Boolean modifier stops evaluating. Keyframe hide_render so it can't be
+    # overridden by collection-level visibility.
+    cut_cube.hide_render   = True
+    cut_cube.hide_viewport = False
+    with kf_interp('CONSTANT'):
+        cut_cube.keyframe_insert(data_path="hide_render", frame=1)
+
+    # ── Boolean cuts on all visible layers ───────────────────────────────────
+    add_boolean_cuts(active_stack, cut_cube)
+
+    # ── Geometry references ───────────────────────────────────────────────────
+    cc_loc        = cut_cube.location.copy()
+    cc_scale      = cut_cube.scale.copy()
+    x_min_cc      = cc_loc.x - cc_scale.x
+    x_max_cc      = cc_loc.x + cc_scale.x
+    y_min_cc      = cc_loc.y - cc_scale.y
+    y_max_cc      = cc_loc.y + cc_scale.y
+    top_z         = cc_loc.z + cc_scale.z   # final top face of cut_cube
+    final_loc_z   = cc_loc.z               # final centre Z
+    final_scale_z = cc_scale.z             # final scale.z
+
+    # ── SiO2 slab (Z=0 to chip_top_z + cap, full chip footprint) ────────────
+    # Covers from the substrate up to just above the met4 wires.
+    sio2_cap      = sio2_cfg.get('cap_thickness', 0.017)
+    sio2_top_z    = chip_top_z + sio2_cap   # surface the FIB beam scans
+    x0, x1, y0, y1 = chip_bounds
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    w  = x1 - x0
+    d  = y1 - y0
+    h  = sio2_top_z                       # full height from Z=0
+
+    sio2_final_sz = h / 2                 # final scale.z for a size=2 cube
+    sio2_final_lz = sio2_final_sz         # centre when bottom is at Z=0
+
+    bpy.ops.mesh.primitive_cube_add(size=2, location=(cx, cy, sio2_final_lz))
+    sio2 = bpy.context.active_object
+    sio2.name = "sio2"
+    sio2.dimensions = (w, d, h)
+
+    sio2_mat = make_material({
+        'name':         'sio2',
+        'color':        sio2_cfg.get('color',        [0.02, 0.05, 0.10]),
+        'metallic':     0.0,
+        'roughness':    sio2_cfg.get('roughness',    0.05),
+        'transmission': sio2_cfg.get('transmission', 0.80),
+    })
+    sio2_bsdf = sio2_mat.node_tree.nodes.get('Principled BSDF')
+    if sio2_bsdf and 'IOR' in sio2_bsdf.inputs:
+        sio2_bsdf.inputs['IOR'].default_value = sio2_cfg.get('ior', 1.46)
+    sio2.data.materials.append(sio2_mat)
+
+    # Boolean cut on SiO2 — EXACT is more reliable for clean primitive geometry
+    sio2_mod           = sio2.modifiers.new("CutCube", type='BOOLEAN')
+    sio2_mod.operation = 'DIFFERENCE'
+    sio2_mod.object    = cut_cube
+    sio2_mod.solver    = 'EXACT'
+
+    # Grows upward from Z=0 (substrate); bottom stays fixed at 0, so location.z = scale.z
+    with kf_interp('CONSTANT'):
+        sio2.hide_viewport = True
+        sio2.hide_render   = True
+        sio2.keyframe_insert(data_path="hide_viewport", frame=1)
+        sio2.keyframe_insert(data_path="hide_render",   frame=1)
+        sio2.scale.z    = 0.001
+        sio2.location.z = 0.001
+        sio2.keyframe_insert(data_path="scale",    index=2, frame=1)
+        sio2.keyframe_insert(data_path="location", index=2, frame=1)
+        sio2.hide_viewport = False
+        sio2.hide_render   = False
+        sio2.keyframe_insert(data_path="hide_viewport", frame=sio2_start)
+        sio2.keyframe_insert(data_path="hide_render",   frame=sio2_start)
+
+    with kf_interp('BEZIER'):
+        sio2.scale.z    = 0.001
+        sio2.location.z = 0.001
+        sio2.keyframe_insert(data_path="scale",    index=2, frame=sio2_start)
+        sio2.keyframe_insert(data_path="location", index=2, frame=sio2_start)
+        sio2.scale.z    = sio2_final_sz
+        sio2.location.z = sio2_final_lz
+        sio2.keyframe_insert(data_path="scale",    index=2, frame=sio2_end)
+        sio2.keyframe_insert(data_path="location", index=2, frame=sio2_end)
+
+    sio2.scale.z    = sio2_final_sz
+    sio2.location.z = sio2_final_lz
+
+    # ── FIB rectangle (emissive plane marking the scan area) ─────────────────
+    rect_cx = (x_min_cc + x_max_cc) / 2
+    rect_cy = (y_min_cc + y_max_cc) / 2
+    bpy.ops.mesh.primitive_plane_add(size=2,
+                                     location=(rect_cx, rect_cy, sio2_top_z + 0.005))
+    fib_rect = bpy.context.active_object
+    fib_rect.name = "fib_rect"
+    fib_rect.dimensions = (x_max_cc - x_min_cc, y_max_cc - y_min_cc, 0)
+    fib_rect.data.materials.append(create_emissive_material(
+        "fib_rect",
+        fib_rect_cfg.get('color', [1.0, 0.6, 0.1]),
+        fib_rect_cfg.get('emission_strength', 5.0),
+    ))
+
+    with kf_interp('CONSTANT'):
+        fib_rect.hide_viewport = True
+        fib_rect.hide_render   = True
+        fib_rect.keyframe_insert(data_path="hide_viewport", frame=1)
+        fib_rect.keyframe_insert(data_path="hide_render",   frame=1)
+        fib_rect.hide_viewport = False
+        fib_rect.hide_render   = False
+        fib_rect.keyframe_insert(data_path="hide_viewport", frame=beam_start)
+        fib_rect.keyframe_insert(data_path="hide_render",   frame=beam_start)
+        # Disappears when the cut starts so it doesn't cover the trench
+        fib_rect.hide_viewport = True
+        fib_rect.hide_render   = True
+        fib_rect.keyframe_insert(data_path="hide_viewport", frame=cut_start)
+        fib_rect.keyframe_insert(data_path="hide_render",   frame=cut_start)
+
+    # ── FIB beam cylinder ────────────────────────────────────────────────────
+    b_radius = fib_beam_cfg.get('radius', 0.04)
+    b_height = fib_beam_cfg.get('height', 0.3)
+    beam_z   = sio2_top_z + b_height / 2   # base sits on SiO2 surface
+
+    bpy.ops.mesh.primitive_cylinder_add(
+        radius=b_radius, depth=b_height,
+        location=(x_min_cc, y_min_cc, beam_z),
+    )
+    beam = bpy.context.active_object
+    beam.name = "fib_beam"
+    beam.data.materials.append(create_emissive_material(
+        "fib_beam",
+        fib_beam_cfg.get('color', [1.0, 0.85, 0.3]),
+        fib_beam_cfg.get('emission_strength', 30.0),
+    ))
+
+    # Raster scan: raster_passes full sweeps of the area, each pass covers
+    # raster_lines Y positions. Cap total so each sweep gets ≥1 frame.
+    raster_passes = anim_cfg.get('raster_passes', 1)
+    total_sweeps  = min(raster_lines * raster_passes, cut_end - beam_start)
+    fpline        = (cut_end - beam_start) / total_sweeps
+    beam.animation_data_clear()
+    with kf_interp('LINEAR'):
+        for i in range(total_sweeps):
+            f0    = int(beam_start + i * fpline)
+            f1    = int(beam_start + (i + 1) * fpline)
+            y_idx = i % raster_lines
+            y     = y_min_cc + y_idx * (y_max_cc - y_min_cc) / max(raster_lines - 1, 1)
+            x0    = x_min_cc if i % 2 == 0 else x_max_cc
+            x1    = x_max_cc if i % 2 == 0 else x_min_cc
+            beam.location = (x0, y, beam_z)
+            beam.keyframe_insert(data_path="location", frame=f0)
+            beam.location = (x1, y, beam_z)
+            beam.keyframe_insert(data_path="location", frame=f1)
+
+    with kf_interp('CONSTANT'):
+        beam.hide_viewport = True
+        beam.hide_render   = True
+        beam.keyframe_insert(data_path="hide_viewport", frame=1)
+        beam.keyframe_insert(data_path="hide_render",   frame=1)
+        beam.hide_viewport = False
+        beam.hide_render   = False
+        beam.keyframe_insert(data_path="hide_viewport", frame=beam_start)
+        beam.keyframe_insert(data_path="hide_render",   frame=beam_start)
+        beam.hide_viewport = True
+        beam.hide_render   = True
+        beam.keyframe_insert(data_path="hide_viewport", frame=cut_end + 1)
+        beam.keyframe_insert(data_path="hide_render",   frame=cut_end + 1)
+
+    # ── cut_cube: starts as thin slice at SiO2 surface, grows downward ─────────
+    # Cut extends cut_above above the SiO2 surface so it cleanly removes the top
+    # face (avoids z-fighting when top is exactly co-planar with SiO2 surface).
+    cut_depth    = anim_cfg.get('cut_depth', 0.02)
+    cut_above    = anim_cfg.get('cut_above', 0.01)
+    total_cut_h  = cut_above + sio2_cap + cut_depth
+    final_cut_sz = total_cut_h / 2
+    cut_top_z    = sio2_top_z + cut_above        # top of cut, always above SiO2
+    final_cut_lz = cut_top_z - final_cut_sz
+    start_cut_lz = cut_top_z - 0.001            # nearly flat, top above SiO2
+
+    with kf_interp('CONSTANT'):
+        cut_cube.scale.z    = 0.001
+        cut_cube.location.z = start_cut_lz
+        cut_cube.keyframe_insert(data_path="scale",    index=2, frame=1)
+        cut_cube.keyframe_insert(data_path="location", index=2, frame=1)
+
+    with kf_interp('BEZIER'):
+        cut_cube.scale.z    = 0.001
+        cut_cube.location.z = start_cut_lz
+        cut_cube.keyframe_insert(data_path="scale",    index=2, frame=cut_start)
+        cut_cube.keyframe_insert(data_path="location", index=2, frame=cut_start)
+        cut_cube.scale.z    = final_cut_sz
+        cut_cube.location.z = final_cut_lz
+        cut_cube.keyframe_insert(data_path="scale",    index=2, frame=cut_end)
+        cut_cube.keyframe_insert(data_path="location", index=2, frame=cut_end)
+
+    cut_cube.scale.z    = final_cut_sz
+    cut_cube.location.z = final_cut_lz
+
+    print(f"  FIB: sio2 {sio2_start}→{sio2_end}, rect+beam from {beam_start}, "
+          f"cut {cut_start}→{cut_end}, {raster_lines} raster lines")
+
+
 def setup_render(scene, anim_cfg, motion_blur, cfg):
     scene.frame_start = 1
     scene.frame_end   = anim_cfg['total_frames']
@@ -662,6 +1045,7 @@ def main():
 
     print(f"\n=== Building chip scene ({anim_type}) ===")
     clear_scene()
+    recreate_cut_cube(cfg)
 
     # ── 1. Import & position layers ──────────────────────────
     layer_stack = []
@@ -716,7 +1100,9 @@ def main():
         entry['obj'].location.y -= cy
 
     # ── 3. Chip geometry ──────────────────────────────────────
+    bpy.context.view_layer.update()   # flush transforms after XY centering
     chip_center_z = current_z / 2
+    chip_top_z    = current_z
     chip_bounds   = compute_chip_bounds(valid_objects)
     print(f"Chip bounds:  X=[{chip_bounds[0]:.3f}, {chip_bounds[1]:.3f}]  "
           f"Y=[{chip_bounds[2]:.3f}, {chip_bounds[3]:.3f}]  centre_Z={chip_center_z:.3f}")
@@ -744,7 +1130,9 @@ def main():
     elif anim_type == 'drift_loop':
         cam_obj = setup_camera_drift_loop(cam_cfg, anim_cfg)
     elif anim_type == 'analog_zoom':
-        cam_obj = setup_camera_analog_zoom(cam_cfg, anim_cfg, chip_bounds, chip_center_z)
+        cam_obj, _outro_start = setup_camera_analog_zoom(cam_cfg, anim_cfg, chip_bounds, chip_center_z)
+    elif anim_type == 'fib_cut':
+        cam_obj = setup_camera_fib_cut(cfg, anim_cfg)
     else:
         raise ValueError(f"Unknown animation type: '{anim_type}'")
 
@@ -778,6 +1166,13 @@ def main():
         print(f"  Drift loop set for {len(active_stack)} layers")
     elif anim_type == 'analog_zoom':
         print(f"  analog_zoom: layers static, camera animates")
+        cube = bpy.data.objects.get("cut_cube")
+        if cube:
+            add_boolean_cuts(active_stack, cube)
+        if anim_cfg.get('outro_frames', 0) > 0:
+            animate_cut_cube_outro(_outro_start, anim_cfg['outro_frames'])
+    elif anim_type == 'fib_cut':
+        setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z)
 
     # ── 10. Render settings ───────────────────────────────────
     setup_render(bpy.context.scene, anim_cfg, cfg.get('motion_blur', False), cfg)
