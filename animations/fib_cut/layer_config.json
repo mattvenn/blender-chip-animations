@@ -12,8 +12,38 @@
     ],
     "world_strength": 0.0,
     "key_energy": 500.0,
-    "fill_energy": 5000.0,
-    "rim_energy": 1000.0
+    "fill_energy": 10000.0,
+    "rim_energy": 1000.0,
+    "key_location": [
+      9.0,
+      -7.0,
+      10.1
+    ],
+    "key_rotation": [
+      0.872665,
+      0.0,
+      0.698132
+    ],
+    "fill_location": [
+      3.341693,
+      18.683392,
+      6.30984
+    ],
+    "fill_rotation": [
+      -0.785398,
+      -1.012291,
+      -0.558505
+    ],
+    "rim_location": [
+      -6.0,
+      -9.0,
+      -2.9
+    ],
+    "rim_rotation": [
+      -0.959931,
+      0.0,
+      -0.698132
+    ]
   },
   "camera_start": {
     "location": [
@@ -36,7 +66,7 @@
     ],
     "rotation_euler": [
       0.8,
-      -0.0,
+      0.0,
       0.621337
     ],
     "focal_length": 46.0
@@ -47,7 +77,7 @@
       0.05,
       0.1
     ],
-    "roughness": 0.05,
+    "roughness": 0.15,
     "transmission": 0.8,
     "ior": 1.46,
     "cap_thickness": 0.017
@@ -83,13 +113,13 @@
     "raster_lines": 5,
     "raster_passes": 20,
     "cut_depth": 0.02,
-    "cut_above": 0.01
+    "cut_above": 0.002
   },
   "cut_cube": {
     "location": [
       -0.22,
       -1.050344,
-      0.206296
+      0.200219
     ],
     "rotation_euler": [
       0.0,
@@ -99,7 +129,7 @@
     "dimensions": [
       0.036687,
       0.092983,
-      0.041409
+      0.037561
     ],
     "material": {
       "color": [

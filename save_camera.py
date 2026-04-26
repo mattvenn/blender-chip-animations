@@ -61,7 +61,12 @@ for obj_name, cfg_key in light_map.items():
     obj = bpy.data.objects.get(obj_name)
     if obj and obj.type == 'LIGHT':
         cfg['lighting'][cfg_key] = round(obj.data.energy, 2)
-        print(f"Light saved:   {obj_name} energy={cfg['lighting'][cfg_key]}")
+        loc_key = cfg_key.replace('_energy', '_location')
+        rot_key = cfg_key.replace('_energy', '_rotation')
+        cfg['lighting'][loc_key] = [round(v, 6) for v in obj.location]
+        cfg['lighting'][rot_key] = [round(v, 6) for v in obj.rotation_euler]
+        print(f"Light saved:   {obj_name} energy={cfg['lighting'][cfg_key]}  "
+              f"loc={cfg['lighting'][loc_key]}")
     else:
         print(f"WARNING: light '{obj_name}' not found in scene — skipped.")
 

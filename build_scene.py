@@ -470,18 +470,29 @@ def setup_lighting(chip_center_z, light_cfg):
         obj.rotation_euler = tuple(math.radians(a) for a in rot_deg)
 
     add_area("KeyLight",  light_cfg.get('key_energy',  20000), 4,
-             (9, -7, chip_center_z + 10), (50, 0, 40))
+             light_cfg.get('key_location',  (9, -7, chip_center_z + 10)),
+             (50, 0, 40))
     add_area("FillLight", light_cfg.get('fill_energy',  8000), 9,
-             (-11, 9, chip_center_z + 7), (35, 0, -50))
+             light_cfg.get('fill_location', (-11, 9, chip_center_z + 7)),
+             (35, 0, -50))
+
+    # Override rotations with saved radian values when present
+    for name, rot_key in (("KeyLight", 'key_rotation'), ("FillLight", 'fill_rotation')):
+        if rot_key in light_cfg:
+            obj = bpy.data.objects.get(name)
+            if obj:
+                obj.rotation_euler = light_cfg[rot_key]
 
     rim_d   = bpy.data.lights.new("RimLight", type='SPOT')
     rim_obj = bpy.data.objects.new("RimLight", rim_d)
     bpy.context.scene.collection.objects.link(rim_obj)
-    rim_d.energy         = light_cfg.get('rim_energy', 4000)
-    rim_d.spot_size      = math.radians(25)
-    rim_d.spot_blend     = 0.3
-    rim_obj.location     = (-6, -9, chip_center_z - 3)
-    rim_obj.rotation_euler = (math.radians(-55), 0, math.radians(-40))
+    rim_d.energy           = light_cfg.get('rim_energy', 4000)
+    rim_d.spot_size        = math.radians(25)
+    rim_d.spot_blend       = 0.3
+    rim_obj.location       = light_cfg.get('rim_location', (-6, -9, chip_center_z - 3))
+    rim_obj.rotation_euler = (light_cfg['rim_rotation']
+                              if 'rim_rotation' in light_cfg
+                              else (math.radians(-55), 0, math.radians(-40)))
 
 
 # ─────────────────────────────────────────────
@@ -770,6 +781,18 @@ def setup_camera_fib_cut(cfg, anim_cfg):
 
     insert_cam(1,        start_cfg, 'BEZIER')
     insert_cam(zoom_end, end_cfg,   'BEZIER')
+
+    # Track To constraint keeps the cut area centred throughout the pan.
+    # The constraint overrides rotation_euler keyframes so the camera always
+    # points at cut_cube regardless of the location path.
+    cut_cube = bpy.data.objects.get("cut_cube")
+    if cut_cube:
+        con            = cam_obj.constraints.new(type='TRACK_TO')
+        con.target     = cut_cube
+        con.track_axis = 'TRACK_NEGATIVE_Z'
+        con.up_axis    = 'UP_Y'
+        print("  FIB camera: Track To cut_cube active for all frames")
+
     print(f"  FIB camera: zoom frames 1→{zoom_end}, then holds")
     return cam_obj
 
@@ -792,13 +815,13 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
         print("  WARNING: cut_cube not found — FIB animation incomplete")
         return
 
-    # hide_render keeps it out of renders; hide_viewport must stay False or the
-    # Boolean modifier stops evaluating. Keyframe hide_render so it can't be
-    # overridden by collection-level visibility.
+    # Hidden from both viewport and render. Blender 4.x evaluates Boolean
+    # modifiers correctly even when the cutter object is hidden.
     cut_cube.hide_render   = True
-    cut_cube.hide_viewport = False
+    cut_cube.hide_viewport = True
     with kf_interp('CONSTANT'):
-        cut_cube.keyframe_insert(data_path="hide_render", frame=1)
+        cut_cube.keyframe_insert(data_path="hide_render",   frame=1)
+        cut_cube.keyframe_insert(data_path="hide_viewport", frame=1)
 
     # ── Boolean cuts on all visible layers ───────────────────────────────────
     add_boolean_cuts(active_stack, cut_cube)
@@ -851,33 +874,21 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
     sio2_mod.object    = cut_cube
     sio2_mod.solver    = 'EXACT'
 
-    # Grows upward from Z=0 (substrate); bottom stays fixed at 0, so location.z = scale.z
-    with kf_interp('CONSTANT'):
-        sio2.hide_viewport = True
-        sio2.hide_render   = True
-        sio2.keyframe_insert(data_path="hide_viewport", frame=1)
-        sio2.keyframe_insert(data_path="hide_render",   frame=1)
-        sio2.scale.z    = 0.001
-        sio2.location.z = 0.001
-        sio2.keyframe_insert(data_path="scale",    index=2, frame=1)
-        sio2.keyframe_insert(data_path="location", index=2, frame=1)
-        sio2.hide_viewport = False
-        sio2.hide_render   = False
-        sio2.keyframe_insert(data_path="hide_viewport", frame=sio2_start)
-        sio2.keyframe_insert(data_path="hide_render",   frame=sio2_start)
-
-    with kf_interp('BEZIER'):
-        sio2.scale.z    = 0.001
-        sio2.location.z = 0.001
-        sio2.keyframe_insert(data_path="scale",    index=2, frame=sio2_start)
-        sio2.keyframe_insert(data_path="location", index=2, frame=sio2_start)
-        sio2.scale.z    = sio2_final_sz
-        sio2.location.z = sio2_final_lz
-        sio2.keyframe_insert(data_path="scale",    index=2, frame=sio2_end)
-        sio2.keyframe_insert(data_path="location", index=2, frame=sio2_end)
-
+    # Fade in: SiO2 sits at full size, Alpha animates 0→1 over sio2_start→sio2_end
     sio2.scale.z    = sio2_final_sz
     sio2.location.z = sio2_final_lz
+
+    if sio2_bsdf and 'Alpha' in sio2_bsdf.inputs:
+        alpha = sio2_bsdf.inputs['Alpha']
+        with kf_interp('CONSTANT'):
+            alpha.default_value = 0.0
+            alpha.keyframe_insert(data_path="default_value", frame=1)
+        with kf_interp('BEZIER'):
+            alpha.default_value = 0.0
+            alpha.keyframe_insert(data_path="default_value", frame=sio2_start)
+            alpha.default_value = 1.0
+            alpha.keyframe_insert(data_path="default_value", frame=sio2_end)
+        alpha.default_value = 1.0
 
     # ── FIB rectangle (emissive plane marking the scan area) ─────────────────
     rect_cx = (x_min_cc + x_max_cc) / 2
@@ -893,20 +904,8 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
         fib_rect_cfg.get('emission_strength', 5.0),
     ))
 
-    with kf_interp('CONSTANT'):
-        fib_rect.hide_viewport = True
-        fib_rect.hide_render   = True
-        fib_rect.keyframe_insert(data_path="hide_viewport", frame=1)
-        fib_rect.keyframe_insert(data_path="hide_render",   frame=1)
-        fib_rect.hide_viewport = False
-        fib_rect.hide_render   = False
-        fib_rect.keyframe_insert(data_path="hide_viewport", frame=beam_start)
-        fib_rect.keyframe_insert(data_path="hide_render",   frame=beam_start)
-        # Disappears when the cut starts so it doesn't cover the trench
-        fib_rect.hide_viewport = True
-        fib_rect.hide_render   = True
-        fib_rect.keyframe_insert(data_path="hide_viewport", frame=cut_start)
-        fib_rect.keyframe_insert(data_path="hide_render",   frame=cut_start)
+    fib_rect.hide_viewport = True
+    fib_rect.hide_render   = True
 
     # ── FIB beam cylinder ────────────────────────────────────────────────────
     b_radius = fib_beam_cfg.get('radius', 0.04)
