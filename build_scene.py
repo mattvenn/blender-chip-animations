@@ -786,7 +786,7 @@ def setup_camera_fib_cut(cfg, anim_cfg):
     return cam_obj
 
 
-def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
+def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z, sio2_bottom_z=0.0):
     anim_cfg     = cfg['animation']
     sio2_cfg     = cfg.get('sio2', {})
     fib_rect_cfg = cfg.get('fib_rect', {})
@@ -869,10 +869,10 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
     cy = (y0 + y1) / 2
     w  = x1 - x0
     d  = y1 - y0
-    h  = sio2_top_z                       # full height from Z=0
+    h  = sio2_top_z - sio2_bottom_z       # height above substrate top
 
     sio2_final_sz = h / 2                 # final scale.z for a size=2 cube
-    sio2_final_lz = sio2_final_sz         # centre when bottom is at Z=0
+    sio2_final_lz = sio2_bottom_z + sio2_final_sz  # centre
 
     bpy.ops.mesh.primitive_cube_add(size=2, location=(cx, cy, sio2_final_lz))
     sio2 = bpy.context.active_object
@@ -1228,7 +1228,7 @@ def main():
         if anim_cfg.get('outro_frames', 0) > 0:
             animate_cut_cube_outro(_outro_start, anim_cfg['outro_frames'])
     elif anim_type == 'fib_cut':
-        setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z)
+        setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z, sio2_bottom_z=0.0001)
 
     # ── 10. Render settings ───────────────────────────────────
     setup_render(bpy.context.scene, anim_cfg, cfg.get('motion_blur', False), cfg)
