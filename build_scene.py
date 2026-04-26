@@ -782,17 +782,6 @@ def setup_camera_fib_cut(cfg, anim_cfg):
     insert_cam(1,        start_cfg, 'BEZIER')
     insert_cam(zoom_end, end_cfg,   'BEZIER')
 
-    # Track To constraint keeps the cut area centred throughout the pan.
-    # The constraint overrides rotation_euler keyframes so the camera always
-    # points at cut_cube regardless of the location path.
-    cut_cube = bpy.data.objects.get("cut_cube")
-    if cut_cube:
-        con            = cam_obj.constraints.new(type='TRACK_TO')
-        con.target     = cut_cube
-        con.track_axis = 'TRACK_NEGATIVE_Z'
-        con.up_axis    = 'UP_Y'
-        print("  FIB camera: Track To cut_cube active for all frames")
-
     print(f"  FIB camera: zoom frames 1→{zoom_end}, then holds")
     return cam_obj
 
@@ -823,9 +812,6 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
         cut_cube.keyframe_insert(data_path="hide_render",   frame=1)
         cut_cube.keyframe_insert(data_path="hide_viewport", frame=1)
 
-    # ── Boolean cuts on all visible layers ───────────────────────────────────
-    add_boolean_cuts(active_stack, cut_cube)
-
     # ── Geometry references ───────────────────────────────────────────────────
     cc_loc        = cut_cube.location.copy()
     cc_scale      = cut_cube.scale.copy()
@@ -833,14 +819,51 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
     x_max_cc      = cc_loc.x + cc_scale.x
     y_min_cc      = cc_loc.y - cc_scale.y
     y_max_cc      = cc_loc.y + cc_scale.y
-    top_z         = cc_loc.z + cc_scale.z   # final top face of cut_cube
-    final_loc_z   = cc_loc.z               # final centre Z
-    final_scale_z = cc_scale.z             # final scale.z
+    top_z         = cc_loc.z + cc_scale.z
+    final_loc_z   = cc_loc.z
+    final_scale_z = cc_scale.z
+
+    # ── cut_cube_layers: slightly smaller XY so SiO2 walls overhang met4 ─────
+    # cut_cube cuts the SiO2; cut_cube_layers (inset) cuts the chip layers.
+    # The SiO2 hole is a fraction wider, eliminating co-planar faces at met4.
+    layer_inset = anim_cfg.get('layer_inset', 0.001)
+    bpy.ops.mesh.primitive_cube_add(size=2, location=cc_loc)
+    cut_cube_layers = bpy.context.active_object
+    cut_cube_layers.name         = "cut_cube_layers"
+    cut_cube_layers.scale.x      = max(cc_scale.x - layer_inset, 0.0001)
+    cut_cube_layers.scale.y      = max(cc_scale.y - layer_inset, 0.0001)
+    cut_cube_layers.scale.z      = cc_scale.z
+    cut_cube_layers.hide_render   = True
+    cut_cube_layers.hide_viewport = True
+    with kf_interp('CONSTANT'):
+        cut_cube_layers.keyframe_insert(data_path="hide_render",   frame=1)
+        cut_cube_layers.keyframe_insert(data_path="hide_viewport", frame=1)
+
+    # ── Boolean cuts: SiO2 uses cut_cube, chip layers use cut_cube_layers ─────
+    add_boolean_cuts(active_stack, cut_cube_layers)
 
     # ── SiO2 slab (Z=0 to chip_top_z + cap, full chip footprint) ────────────
     # Covers from the substrate up to just above the met4 wires.
     sio2_cap      = sio2_cfg.get('cap_thickness', 0.017)
     sio2_top_z    = chip_top_z + sio2_cap   # surface the FIB beam scans
+    cut_above     = anim_cfg.get('cut_above', 0.002)
+    cut_depth     = anim_cfg.get('cut_depth', 0.02)
+    cut_top_z     = sio2_top_z + cut_above  # fixed top of cut (never moves)
+    total_cut_h   = cut_above + sio2_cap + cut_depth
+
+    # ── Camera: track fixed point at cut top so it never drifts during cut ───
+    bpy.ops.object.empty_add(type='SPHERE', location=(cc_loc.x, cc_loc.y, cut_top_z),
+                             scale=(0.001, 0.001, 0.001))
+    track_point              = bpy.context.active_object
+    track_point.name         = "fib_track_point"
+    track_point.hide_render  = True
+    track_point.hide_viewport = True
+    cam_obj = bpy.context.scene.camera
+    if cam_obj:
+        con            = cam_obj.constraints.new(type='TRACK_TO')
+        con.target     = track_point
+        con.track_axis = 'TRACK_NEGATIVE_Z'
+        con.up_axis    = 'UP_Y'
     x0, x1, y0, y1 = chip_bounds
     cx = (x0 + x1) / 2
     cy = (y0 + y1) / 2
@@ -910,11 +933,12 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
     # ── FIB beam cylinder ────────────────────────────────────────────────────
     b_radius = fib_beam_cfg.get('radius', 0.04)
     b_height = fib_beam_cfg.get('height', 0.3)
-    beam_z   = sio2_top_z + b_height / 2   # base sits on SiO2 surface
+
+    beam_top = sio2_top_z + b_height   # top of beam, fixed throughout animation
 
     bpy.ops.mesh.primitive_cylinder_add(
         radius=b_radius, depth=b_height,
-        location=(x_min_cc, y_min_cc, beam_z),
+        location=(x_min_cc + b_radius, y_min_cc + b_radius, beam_top),
     )
     beam = bpy.context.active_object
     beam.name = "fib_beam"
@@ -924,24 +948,59 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
         fib_beam_cfg.get('emission_strength', 30.0),
     ))
 
-    # Raster scan: raster_passes full sweeps of the area, each pass covers
-    # raster_lines Y positions. Cap total so each sweep gets ≥1 frame.
+    # Raster scan: inset bounds by beam radius so cylinder edge stays inside cut cube
+    rx = x_min_cc + b_radius
+    rx_max = x_max_cc - b_radius
+    ry = y_min_cc + b_radius
+    ry_max = y_max_cc - b_radius
+
     raster_passes = anim_cfg.get('raster_passes', 1)
     total_sweeps  = min(raster_lines * raster_passes, cut_end - beam_start)
     fpline        = (cut_end - beam_start) / total_sweeps
     beam.animation_data_clear()
+    # Raster: keyframe X and Y only — Z is animated separately for depth growth
     with kf_interp('LINEAR'):
         for i in range(total_sweeps):
             f0    = int(beam_start + i * fpline)
             f1    = int(beam_start + (i + 1) * fpline)
             y_idx = i % raster_lines
-            y     = y_min_cc + y_idx * (y_max_cc - y_min_cc) / max(raster_lines - 1, 1)
-            x0    = x_min_cc if i % 2 == 0 else x_max_cc
-            x1    = x_max_cc if i % 2 == 0 else x_min_cc
-            beam.location = (x0, y, beam_z)
-            beam.keyframe_insert(data_path="location", frame=f0)
-            beam.location = (x1, y, beam_z)
-            beam.keyframe_insert(data_path="location", frame=f1)
+            y     = ry + y_idx * (ry_max - ry) / max(raster_lines - 1, 1)
+            x0    = rx     if i % 2 == 0 else rx_max
+            x1    = rx_max if i % 2 == 0 else rx
+            beam.location.x = x0
+            beam.location.y = y
+            beam.keyframe_insert(data_path="location", index=0, frame=f0)
+            beam.keyframe_insert(data_path="location", index=1, frame=f0)
+            beam.location.x = x1
+            beam.keyframe_insert(data_path="location", index=0, frame=f1)
+            beam.keyframe_insert(data_path="location", index=1, frame=f1)
+
+    # Beam depth: top fixed at sio2_top_z, grows downward with the cut
+    # Beam starts at original height (base on SiO2 surface), then grows downward.
+    # Top is fixed at beam_top; base descends total_cut_h into the chip.
+    beam_init_sz   = 1.0                                       # unscaled = original height
+    beam_init_lz   = beam_top - b_height / 2                  # original centre
+    beam_final_sz  = (b_height + total_cut_h) / b_height      # longer at full cut
+    beam_final_lz  = beam_top - (b_height + total_cut_h) / 2  # centre at full cut
+
+    with kf_interp('CONSTANT'):
+        beam.scale.z    = beam_init_sz
+        beam.location.z = beam_init_lz
+        beam.keyframe_insert(data_path="scale",    index=2, frame=1)
+        beam.keyframe_insert(data_path="location", index=2, frame=1)
+
+    with kf_interp('BEZIER'):
+        beam.scale.z    = beam_init_sz
+        beam.location.z = beam_init_lz
+        beam.keyframe_insert(data_path="scale",    index=2, frame=cut_start)
+        beam.keyframe_insert(data_path="location", index=2, frame=cut_start)
+        beam.scale.z    = beam_final_sz
+        beam.location.z = beam_final_lz
+        beam.keyframe_insert(data_path="scale",    index=2, frame=cut_end)
+        beam.keyframe_insert(data_path="location", index=2, frame=cut_end)
+
+    beam.scale.z    = beam_final_sz
+    beam.location.z = beam_final_lz
 
     with kf_interp('CONSTANT'):
         beam.hide_viewport = True
@@ -960,32 +1019,30 @@ def setup_fib_cut_animation(cfg, active_stack, chip_bounds, chip_top_z):
     # ── cut_cube: starts as thin slice at SiO2 surface, grows downward ─────────
     # Cut extends cut_above above the SiO2 surface so it cleanly removes the top
     # face (avoids z-fighting when top is exactly co-planar with SiO2 surface).
-    cut_depth    = anim_cfg.get('cut_depth', 0.02)
-    cut_above    = anim_cfg.get('cut_above', 0.01)
-    total_cut_h  = cut_above + sio2_cap + cut_depth
+    # total_cut_h and cut_top_z already computed above
     final_cut_sz = total_cut_h / 2
-    cut_top_z    = sio2_top_z + cut_above        # top of cut, always above SiO2
     final_cut_lz = cut_top_z - final_cut_sz
     start_cut_lz = cut_top_z - 0.001            # nearly flat, top above SiO2
 
-    with kf_interp('CONSTANT'):
-        cut_cube.scale.z    = 0.001
-        cut_cube.location.z = start_cut_lz
-        cut_cube.keyframe_insert(data_path="scale",    index=2, frame=1)
-        cut_cube.keyframe_insert(data_path="location", index=2, frame=1)
+    for cutter in (cut_cube, cut_cube_layers):
+        with kf_interp('CONSTANT'):
+            cutter.scale.z    = 0.001
+            cutter.location.z = start_cut_lz
+            cutter.keyframe_insert(data_path="scale",    index=2, frame=1)
+            cutter.keyframe_insert(data_path="location", index=2, frame=1)
 
-    with kf_interp('BEZIER'):
-        cut_cube.scale.z    = 0.001
-        cut_cube.location.z = start_cut_lz
-        cut_cube.keyframe_insert(data_path="scale",    index=2, frame=cut_start)
-        cut_cube.keyframe_insert(data_path="location", index=2, frame=cut_start)
-        cut_cube.scale.z    = final_cut_sz
-        cut_cube.location.z = final_cut_lz
-        cut_cube.keyframe_insert(data_path="scale",    index=2, frame=cut_end)
-        cut_cube.keyframe_insert(data_path="location", index=2, frame=cut_end)
+        with kf_interp('BEZIER'):
+            cutter.scale.z    = 0.001
+            cutter.location.z = start_cut_lz
+            cutter.keyframe_insert(data_path="scale",    index=2, frame=cut_start)
+            cutter.keyframe_insert(data_path="location", index=2, frame=cut_start)
+            cutter.scale.z    = final_cut_sz
+            cutter.location.z = final_cut_lz
+            cutter.keyframe_insert(data_path="scale",    index=2, frame=cut_end)
+            cutter.keyframe_insert(data_path="location", index=2, frame=cut_end)
 
-    cut_cube.scale.z    = final_cut_sz
-    cut_cube.location.z = final_cut_lz
+        cutter.scale.z    = final_cut_sz
+        cutter.location.z = final_cut_lz
 
     print(f"  FIB: sio2 {sio2_start}→{sio2_end}, rect+beam from {beam_start}, "
           f"cut {cut_start}→{cut_end}, {raster_lines} raster lines")

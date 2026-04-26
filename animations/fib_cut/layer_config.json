@@ -78,7 +78,7 @@
       0.1
     ],
     "roughness": 0.15,
-    "transmission": 0.8,
+    "transmission": 0.5,
     "ior": 1.46,
     "cap_thickness": 0.017
   },
@@ -106,14 +106,15 @@
     "total_frames": 336,
     "zoom_end_frame": 77,
     "sio2_start_frame": 77,
-    "sio2_end_frame": 152,
+    "sio2_end_frame": 132,
     "beam_start_frame": 152,
     "cut_start_frame": 170,
     "cut_end_frame": 288,
     "raster_lines": 5,
     "raster_passes": 20,
     "cut_depth": 0.02,
-    "cut_above": 0.002
+    "cut_above": 0.002,
+    "layer_inset": 0.0001
   },
   "cut_cube": {
     "location": [
